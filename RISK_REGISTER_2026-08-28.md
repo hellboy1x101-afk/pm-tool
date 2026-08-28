@@ -16,7 +16,7 @@
 | RISK-006 | P1 | Broken assignment JSON endpoint | In progress | Active firm is now passed to the assignment listing service | Compile/import validation passed; endpoint test pending |
 | RISK-007 | P1 | Orphaned user creation | In progress | User and firm membership are now flushed and committed together | Compile/import validation passed; rollback test pending |
 | RISK-008 | P1 | Process-local OTP state | In progress | OTP challenges are now durable, hashed, expiring, rate-limited, and one-time | SQLite round-trip passed; PostgreSQL migration deployment pending |
-| RISK-009 | P1 | Hidden SMTP failures | Not started | Assign owner; improve delivery state and user feedback | Not started |
+| RISK-009 | P1 | Hidden SMTP failures | In progress | Resend routes now receive DB sessions; SMTP recipient refusals are treated as failures | Compile validation pending; provider delivery telemetry still pending |
 | RISK-010 | P1 | Unreliable test regression gate | Not started | Assign owner; repair PostgreSQL test setup and fixtures | Not started |
 | RISK-011 | P1 | ORM/migration drift | Not started | Assign owner; add model-to-schema CI validation | Not started |
 | RISK-012 | P2 | RLS policy model undefined | Not started | Decide whether direct PostgREST access is required | Not started |

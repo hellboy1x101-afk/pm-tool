@@ -223,7 +223,7 @@ async def register_verify_otp(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/register/resend-otp")
-async def register_resend_otp(request: Request):
+async def register_resend_otp(request: Request, db: Session = Depends(get_db)):
     """Resend OTP with rate limiting."""
     form_data = await request.form()
     if not validate_csrf(request, form_data.get("csrf_token")):
@@ -516,7 +516,7 @@ async def login_verify(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/login/resend-otp")
-async def login_resend_otp(request: Request):
+async def login_resend_otp(request: Request, db: Session = Depends(get_db)):
     """Resend login OTP with rate limiting."""
     form_data = await request.form()
     if not validate_csrf(request, form_data.get("csrf_token")):
@@ -1038,7 +1038,7 @@ async def forgot_password_verify(request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/forgot-password/resend-otp")
-async def forgot_password_resend_otp(request: Request):
+async def forgot_password_resend_otp(request: Request, db: Session = Depends(get_db)):
     form_data = await request.form()
     if not validate_csrf(request, form_data.get("csrf_token")):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")

@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    SMTP_FROM_EMAIL: str = "noreply@splanly.local"
+    SMTP_FROM_EMAIL: str = "no-reply@skilledca.in"
     SMTP_USE_TLS: bool = True
     SMTP_USE_SSL: bool = False
-    SMTP_INVITATION_FROM_EMAIL: str = "hello@skilledca.in"
+    SMTP_INVITATION_FROM_EMAIL: str = "invitation@skilledca.in"
     EMAIL_WORKER_INTERVAL_SECONDS: int = 30
     EMAIL_MAX_RETRIES: int = 3
 

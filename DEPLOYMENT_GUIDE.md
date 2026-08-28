@@ -64,10 +64,10 @@ git push origin main
 | `SMTP_PORT` | `587` | |
 | `SMTP_USER` | `emailapikey` | ZeptoMail SMTP username |
 | `SMTP_PASSWORD` | Your ZeptoMail API key | |
-| `SMTP_FROM_EMAIL` | `noreply@yourdomain.com` | Default From for OTP, contact, notifications |
+| `SMTP_FROM_EMAIL` | `no-reply@skilledca.in` | Default From for OTP, contact, notifications |
 | `SMTP_USE_TLS` | `true` | Set true for port 587 (STARTTLS), false for implicit SSL |
 | `SMTP_USE_SSL` | `false` | Set true for port 465 (SSL) |
-| `SMTP_INVITATION_FROM_EMAIL` | `hello@yourdomain.com` | From address for invitations & role-change emails |
+| `SMTP_INVITATION_FROM_EMAIL` | `invitation@skilledca.in` | From address for invitations & role-change emails |
 
 ---
 

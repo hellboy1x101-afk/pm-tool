@@ -23,10 +23,10 @@ services:
       - key: SMTP_PASSWORD
         value: your-zeptomail-api-key
       - key: SMTP_FROM_EMAIL
-        value: noreply@yourdomain.com
+        value: no-reply@skilledca.in
       - key: SMTP_USE_TLS
         value: "true"
       - key: SMTP_USE_SSL
         value: "false"
       - key: SMTP_INVITATION_FROM_EMAIL
-        value: hello@yourdomain.com
+        value: invitation@skilledca.in

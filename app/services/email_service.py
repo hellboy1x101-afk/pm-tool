@@ -102,7 +102,9 @@ def _send_via_smtp(recipient: str, subject: str, body: str) -> None:
     msg["To"] = recipient
 
     with get_smtp_connection() as server:
-        server.sendmail(settings.SMTP_FROM_EMAIL, [recipient], msg.as_string())
+        refused = server.sendmail(settings.SMTP_FROM_EMAIL, [recipient], msg.as_string())
+        if refused:
+            raise RuntimeError(f"SMTP refused recipient(s): {', '.join(refused)}")
 
 
 def send_outbox_entry(db: Session, outbox_id: int) -> bool:
