@@ -114,8 +114,8 @@ def upgrade() -> None:
 
     # ── Step 2b: Seed sample admin user ──
     conn.execute(sa.text(
-        "INSERT INTO users (email, display_name, is_active, technical_role) "
-        "SELECT 'samarth@skilledca.in', 'Samarth', true, 'admin' "
+        "INSERT INTO users (email, display_name, is_active, technical_role, totp_enabled) "
+        "SELECT 'samarth@skilledca.in', 'Samarth', true, 'admin', false "
         "WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'samarth@skilledca.in')"
     ))
     admin_user_id = conn.execute(
