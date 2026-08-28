@@ -134,13 +134,12 @@ async def login_submit(request: Request, username: str = Form(...), password: st
         dp_user = _ensure_dev_user(db)
         if not verify_password(password, dp_user.password_hash):
             return _render(request, "login.html", {"error": "Invalid credentials"})
+        try:
+            generate_otp(db, _DEV_EMAIL, purpose="dev_portal")
+        except ValueError as e:
+            return _render(request, "login.html", {"error": str(e)})
     finally:
         db.close()
-
-    try:
-        generate_otp(_DEV_EMAIL, purpose="dev_portal")
-    except ValueError as e:
-        return _render(request, "login.html", {"error": str(e)})
 
     request.session["dev_portal_pending_email"] = _DEV_EMAIL
     return RedirectResponse("/dev-portal/verify-otp", status_code=302)
@@ -164,7 +163,12 @@ async def verify_otp_submit(request: Request, otp: str = Form(...)):
     if not email:
         return RedirectResponse("/dev-portal/login", status_code=302)
 
-    if not svc_verify_otp(email, otp):
+    db = SessionLocal()
+    try:
+        valid_otp = svc_verify_otp(db, email, otp, purpose="dev_portal")
+    finally:
+        db.close()
+    if not valid_otp:
         return _render(request, "verify_otp.html", {"error": "Invalid or expired OTP"})
 
     request.session.pop("dev_portal_pending_email", None)

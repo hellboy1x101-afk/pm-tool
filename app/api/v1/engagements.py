@@ -74,7 +74,7 @@ def create_engagement(
     if result:
         return result
 
-    e = engagement_service.create_engagement(db, body)
+    e = engagement_service.create_engagement(db, body, firm_id=firm_user.firm_id)
     return {"id": e.id, "name": e.name}
 
 
@@ -92,7 +92,7 @@ def update_engagement(
     if result:
         return result
 
-    e = engagement_service.update_engagement(db, engagement_id, body)
+    e = engagement_service.update_engagement(db, engagement_id, body, firm_id=firm_user.firm_id)
     return {"id": e.id, "name": e.name}
 
 
@@ -109,5 +109,5 @@ def delete_engagement(
     if result:
         return result
 
-    engagement_service.soft_delete_engagement(db, engagement_id)
+    engagement_service.soft_delete_engagement(db, engagement_id, firm_id=firm_user.firm_id)
     return {"detail": "Engagement deactivated"}

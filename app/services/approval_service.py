@@ -96,23 +96,25 @@ def get_approval_request(db: Session, request_id: int, firm_id: int | None = Non
 
 
 def approve_request(db: Session, request_id: int, reviewer_id: int,
-                    note: str | None = None) -> ApprovalRequest:
+                    note: str | None = None, firm_id: int | None = None,
+                    commit: bool = True) -> ApprovalRequest:
     """Approve a pending request."""
-    req = get_approval_request(db, request_id)
+    req = get_approval_request(db, request_id, firm_id=firm_id)
     if req.status != ApprovalStatus.pending:
         raise ValidationError(f"Request {request_id} is already {req.status.value}")
     req.status = ApprovalStatus.approved
     req.reviewed_by_user_id = reviewer_id
     req.review_note = note
-    db.commit()
-    db.refresh(req)
+    if commit:
+        db.commit()
+        db.refresh(req)
     return req
 
 
 def reject_request(db: Session, request_id: int, reviewer_id: int,
-                   note: str | None = None) -> ApprovalRequest:
+                   note: str | None = None, firm_id: int | None = None) -> ApprovalRequest:
     """Reject a pending request."""
-    req = get_approval_request(db, request_id)
+    req = get_approval_request(db, request_id, firm_id=firm_id)
     if req.status != ApprovalStatus.pending:
         raise ValidationError(f"Request {request_id} is already {req.status.value}")
     req.status = ApprovalStatus.rejected

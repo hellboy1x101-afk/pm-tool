@@ -50,10 +50,17 @@ def approve_request(
 ):
     """Approve a pending request and apply the change."""
     note = body.note if body else None
-    req = approval_service.approve_request(db, request_id, firm_user.user_id, note)
+    req = approval_service.approve_request(
+        db, request_id, firm_user.user_id, note,
+        firm_id=firm_user.firm_id, commit=False,
+    )
 
-    # Apply the approved change
-    _apply_approved_change(db, req)
+    try:
+        _apply_approved_change(db, req)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {"id": req.id, "status": "approved", "detail": "Request approved and applied"}
 
@@ -67,7 +74,9 @@ def reject_request(
 ):
     """Reject a pending request."""
     note = body.note if body else None
-    req = approval_service.reject_request(db, request_id, firm_user.user_id, note)
+    req = approval_service.reject_request(
+        db, request_id, firm_user.user_id, note, firm_id=firm_user.firm_id,
+    )
     return {"id": req.id, "status": "rejected", "detail": "Request rejected"}
 
 
@@ -94,17 +103,17 @@ def _apply_approved_change(db: Session, req) -> None:
         if req.operation == OperationType.create:
             client_service.create_client(db, payload)
         elif req.operation == OperationType.update and rid:
-            client_service.update_client(db, rid, payload)
+            client_service.update_client(db, rid, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.delete and rid:
-            client_service.soft_delete_client(db, rid)
+            client_service.soft_delete_client(db, rid, firm_id=req.firm_id)
 
     elif req.resource_type == ResourceType.engagement:
         if req.operation == OperationType.create:
             engagement_service.create_engagement(db, payload)
         elif req.operation == OperationType.update and rid:
-            engagement_service.update_engagement(db, rid, payload)
+            engagement_service.update_engagement(db, rid, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.delete and rid:
-            engagement_service.soft_delete_engagement(db, rid)
+            engagement_service.soft_delete_engagement(db, rid, firm_id=req.firm_id)
 
     elif req.resource_type == ResourceType.leave:
         if req.operation == OperationType.create:
@@ -117,6 +126,7 @@ def _apply_approved_change(db: Session, req) -> None:
             from datetime import date as _date
             allocation_service.create_assignment(
                 db,
+                firm_id=req.firm_id,
                 team_member_id=payload["team_member_id"],
                 engagement_instance_id=payload["engagement_instance_id"],
                 allocation_percent=payload["allocation_percent"],
@@ -128,7 +138,7 @@ def _apply_approved_change(db: Session, req) -> None:
         elif req.operation == OperationType.update and rid:
             from datetime import date as _date
             allocation_service.update_assignment(
-                db, rid,
+                db, firm_id=req.firm_id, assignment_id=rid,
                 allocation_percent=payload.get("allocation_percent"),
                 start_date=_date.fromisoformat(payload["start_date"]) if payload.get("start_date") else None,
                 end_date=_date.fromisoformat(payload["end_date"]) if payload.get("end_date") else None,

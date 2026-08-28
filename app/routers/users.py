@@ -214,12 +214,10 @@ async def create_user_form(
     if not errors:
         try:
             firm_id = request.session.get("firm_id")
-            new_user = service.create_user(db, data, password=password or None, firm_id=firm_id)
-            # Add user to firm with role
-            if firm_id:
-                from app.services.firm_service import add_user_to_firm
-                from app.models.models import TechnicalRole
-                add_user_to_firm(db, new_user.id, firm_id, TechnicalRole(firm_role))
+            new_user = service.create_user(
+                db, data, password=password or None, firm_id=firm_id,
+                firm_role=TechnicalRole(firm_role),
+            )
             set_flash(request, f"User '{data['display_name']}' created.")
             return RedirectResponse(url="/users", status_code=303)
         except ValidationError as e:
@@ -344,7 +342,10 @@ def create_user_api(
     _=Depends(require_role(TechnicalRole.admin)),
 ):
     firm_id = request.session.get("firm_id")
-    result = service.create_user(db, data.model_dump(), firm_id=firm_id)
+    result = service.create_user(
+        db, data.model_dump(), firm_id=firm_id,
+        firm_role=data.technical_role,
+    )
     return UserRead.model_validate(result)
 
 

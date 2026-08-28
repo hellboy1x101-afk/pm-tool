@@ -58,6 +58,7 @@ def create_assignment(
     from datetime import date
     a = allocation_service.create_assignment(
         db,
+        firm_id=firm_user.firm_id,
         team_member_id=body["team_member_id"],
         engagement_instance_id=body["engagement_instance_id"],
         allocation_percent=body["allocation_percent"],
@@ -85,7 +86,7 @@ def update_assignment(
 
     from datetime import date
     a = allocation_service.update_assignment(
-        db, assignment_id,
+        db, firm_id=firm_user.firm_id, assignment_id=assignment_id,
         allocation_percent=body.get("allocation_percent"),
         start_date=date.fromisoformat(body["start_date"]) if body.get("start_date") else None,
         end_date=date.fromisoformat(body["end_date"]) if body.get("end_date") else None,

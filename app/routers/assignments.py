@@ -77,7 +77,8 @@ def list_assignments_json(
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator, TechnicalRole.viewer)),
 ):
     items, total = service.list_assignments(
-        db, limit=limit, offset=offset, team_member_id=team_member_id, engagement_instance_id=engagement_instance_id
+        db, firm_id=request.session.get("firm_id"), limit=limit, offset=offset,
+        team_member_id=team_member_id, engagement_instance_id=engagement_instance_id
     )
     return {"items": [AssignmentRead.model_validate(a) for a in items], "total": total, "limit": limit, "offset": offset}
 
@@ -132,6 +133,7 @@ async def create_assignment_form(
 
         result = service.create_assignment(
             db,
+            firm_id=firm_id,
             team_member_id=payload["team_member_id"],
             engagement_instance_id=payload["engagement_instance_id"],
             allocation_percent=payload["allocation_percent"],
@@ -161,12 +163,13 @@ async def create_assignment_form(
 
 @router.post("", response_model=AssignmentRead, status_code=201)
 def create_assignment_api(
-    data: AssignmentCreate, db: Session = Depends(get_db),
+    data: AssignmentCreate, request: Request, db: Session = Depends(get_db),
     user=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
     try:
         result = service.create_assignment(
-            db, team_member_id=data.team_member_id, engagement_instance_id=data.engagement_instance_id,
+            db, firm_id=request.session.get("firm_id"), team_member_id=data.team_member_id,
+            engagement_instance_id=data.engagement_instance_id,
             allocation_percent=data.allocation_percent, start_date=data.start_date, end_date=data.end_date,
             role_on_engagement=data.role_on_engagement, created_by_user_id=user.id,
         )
@@ -205,6 +208,8 @@ async def update_assignment_form(
     user=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
     form_data = await request.form()
+    if not validate_csrf(request, form_data.get("csrf_token")):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     errors = []
     try:
@@ -215,7 +220,7 @@ async def update_assignment_form(
         end_dt = _date.fromisoformat(end_str) if end_str else None
 
         result = service.update_assignment(
-            db, assignment_id=assignment_id,
+            db, firm_id=request.session.get("firm_id"), assignment_id=assignment_id,
             allocation_percent=int(alloc_val) if alloc_val else None,
             start_date=start_dt,
             end_date=end_dt,
@@ -256,7 +261,8 @@ def update_assignment_api(
 ):
     try:
         result = service.update_assignment(
-            db, assignment_id=assignment_id, allocation_percent=data.allocation_percent,
+            db, firm_id=request.session.get("firm_id"), assignment_id=assignment_id,
+            allocation_percent=data.allocation_percent,
             start_date=data.start_date, end_date=data.end_date, role_on_engagement=data.role_on_engagement,
         )
         return AssignmentRead.model_validate(result)

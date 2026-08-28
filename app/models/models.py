@@ -285,6 +285,22 @@ class User(Base):
     firm_users = relationship("FirmUser", back_populates="user")
 
 
+class OTPChallenge(Base):
+    __tablename__ = "otp_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    purpose = Column(String(50), nullable=False, default="verification")
+    otp_hash = Column(String(64), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    hourly_count = Column(Integer, nullable=False, default=1)
+    hourly_reset_at = Column(DateTime(timezone=True), nullable=False)
+    last_sent_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class TeamMember(Base):
     __tablename__ = "team_members"
 

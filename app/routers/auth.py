@@ -121,7 +121,7 @@ async def register_check_domain(request: Request, db: Session = Depends(get_db))
         # No firm found - will create new firm
         # Generate OTP for email verification
         from app.services.otp_service import generate_otp
-        otp = generate_otp(email)
+        otp = generate_otp(db, email)
         logger.info(f"OTP for {email}: {otp}")
 
         request.session["pending_registration"] = {
@@ -154,7 +154,7 @@ async def register_select_firm(request: Request, db: Session = Depends(get_db)):
 
     # Generate OTP
     from app.services.otp_service import generate_otp
-    otp = generate_otp(email)
+    otp = generate_otp(db, email)
     logger.info(f"OTP for {email}: {otp}")
 
     if action == "join":
@@ -201,7 +201,7 @@ async def register_verify_otp(request: Request, db: Session = Depends(get_db)):
 
     # Verify email OTP
     from app.services.otp_service import verify_otp
-    if not verify_otp(pending["email"], otp):
+    if not verify_otp(db, pending["email"], otp):
         return templates.TemplateResponse(request, "auth/register.html", {
             "csrf_token": get_csrf_token(request),
             "error": "Invalid or expired OTP. Please try again.",
@@ -237,7 +237,7 @@ async def register_resend_otp(request: Request):
 
     # Check rate limit
     from app.services.otp_service import can_resend_otp, generate_otp
-    can_send, seconds_remaining = can_resend_otp(email)
+    can_send, seconds_remaining = can_resend_otp(db, email)
 
     if not can_send:
         return templates.TemplateResponse(request, "auth/register.html", {
@@ -252,7 +252,7 @@ async def register_resend_otp(request: Request):
 
     # Generate new OTP
     try:
-        generate_otp(email)
+        generate_otp(db, email)
     except ValueError as e:
         return templates.TemplateResponse(request, "auth/register.html", {
             "csrf_token": get_csrf_token(request),
@@ -431,7 +431,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
     # For OTP method or if 2FA not required - send OTP for verification
     from app.services.otp_service import generate_otp
-    otp = generate_otp(email)
+    otp = generate_otp(db, email)
     logger.info(f"Login OTP for {email}: {otp}")
 
     request.session["pending_login_email"] = email
@@ -467,7 +467,7 @@ async def login_verify(request: Request, db: Session = Depends(get_db)):
 
     # Verify OTP
     from app.services.otp_service import verify_otp
-    if not verify_otp(email, otp):
+    if not verify_otp(db, email, otp):
         return templates.TemplateResponse(request, "auth/login_verify.html", {
             "csrf_token": get_csrf_token(request),
             "error": "Invalid or expired OTP. Please try again.",
@@ -528,7 +528,7 @@ async def login_resend_otp(request: Request):
 
     # Check rate limit
     from app.services.otp_service import can_resend_otp, generate_otp
-    can_send, seconds_remaining = can_resend_otp(email)
+    can_send, seconds_remaining = can_resend_otp(db, email)
 
     if not can_send:
         return templates.TemplateResponse(request, "auth/login_verify.html", {
@@ -540,7 +540,7 @@ async def login_resend_otp(request: Request):
 
     # Generate new OTP
     try:
-        generate_otp(email)
+        generate_otp(db, email)
         logger.info(f"Resent login OTP for {email}")
     except ValueError as e:
         return templates.TemplateResponse(request, "auth/login_verify.html", {
@@ -951,7 +951,7 @@ async def forgot_password(request: Request, db: Session = Depends(get_db)):
         })
 
     from app.services.otp_service import generate_otp
-    generate_otp(email, purpose="password_reset")
+    generate_otp(db, email, purpose="password_reset")
 
     request.session["pending_reset_email"] = email
     return templates.TemplateResponse(request, "auth/forgot_password.html", {
@@ -991,7 +991,7 @@ async def forgot_password_verify(request: Request, db: Session = Depends(get_db)
     confirm_password = form_data.get("confirm_password", "")
 
     from app.services.otp_service import verify_otp
-    if not verify_otp(email, otp):
+    if not verify_otp(db, email, otp, purpose="password_reset"):
         return templates.TemplateResponse(request, "auth/forgot_password.html", {
             "csrf_token": get_csrf_token(request),
             "error": "Invalid or expired OTP. Please try again.",
@@ -1048,7 +1048,7 @@ async def forgot_password_resend_otp(request: Request):
         return RedirectResponse(url="/auth/forgot-password", status_code=303)
 
     from app.services.otp_service import can_resend_otp, generate_otp
-    can_send, seconds_remaining = can_resend_otp(email)
+    can_send, seconds_remaining = can_resend_otp(db, email, purpose="password_reset")
 
     if not can_send:
         return templates.TemplateResponse(request, "auth/forgot_password.html", {
@@ -1060,7 +1060,7 @@ async def forgot_password_resend_otp(request: Request):
         })
 
     try:
-        generate_otp(email, purpose="password_reset")
+        generate_otp(db, email, purpose="password_reset")
     except ValueError as e:
         return templates.TemplateResponse(request, "auth/forgot_password.html", {
             "csrf_token": get_csrf_token(request),

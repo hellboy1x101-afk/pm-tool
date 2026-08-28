@@ -45,17 +45,9 @@ async def get_current_firm_user(
         if fu and fu.is_active:
             return fu
 
-    # Fallback: get user's first active firm
-    firms = get_user_firms(db, user.id)
-    if firms:
-        from app.services.firm_service import get_firm_user
-        fu = get_firm_user(db, user.id, firms[0].id)
-        if fu and fu.is_active:
-            return fu
-
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="User is not associated with any firm",
+        detail="No valid active firm selected",
     )
 
 

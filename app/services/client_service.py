@@ -40,7 +40,11 @@ def get_client(db: Session, client_id: int, firm_id: int | None = None) -> Clien
     return client
 
 
-def create_client(db: Session, data: dict) -> Client:
+def create_client(db: Session, data: dict, firm_id: int | None = None) -> Client:
+    firm_id = firm_id if firm_id is not None else data.get("firm_id")
+    if firm_id is None:
+        raise ValidationError("An active firm is required")
+    data = {**data, "firm_id": firm_id}
     if data.get("code"):
         existing = db.query(Client).filter(Client.code == data["code"]).first()
         if existing:
@@ -52,18 +56,18 @@ def create_client(db: Session, data: dict) -> Client:
     return client
 
 
-def update_client(db: Session, client_id: int, data: dict) -> Client:
-    client = get_client(db, client_id)
+def update_client(db: Session, client_id: int, data: dict, firm_id: int) -> Client:
+    client = get_client(db, client_id, firm_id=firm_id)
     for key, value in data.items():
-        if value is not None:
+        if key != "firm_id" and value is not None:
             setattr(client, key, value)
     db.commit()
     db.refresh(client)
     return client
 
 
-def soft_delete_client(db: Session, client_id: int) -> Client:
-    client = get_client(db, client_id)
+def soft_delete_client(db: Session, client_id: int, firm_id: int) -> Client:
+    client = get_client(db, client_id, firm_id=firm_id)
     client.is_active = False
     db.commit()
     db.refresh(client)

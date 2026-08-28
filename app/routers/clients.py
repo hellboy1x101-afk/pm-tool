@@ -81,7 +81,7 @@ async def create_client_form(
             referer = request.headers.get("referer", "/clients")
             return RedirectResponse(url=referer, status_code=303)
 
-        service.create_client(db, data)
+        service.create_client(db, data, firm_id=firm_id)
         return RedirectResponse(url="/clients", status_code=303)
     except ValidationError as e:
         errors.append(str(e))
@@ -121,7 +121,7 @@ async def update_client_form(
             data[key] = val
 
     try:
-        service.update_client(db, client_id, data)
+        service.update_client(db, client_id, data, firm_id=request.session.get("firm_id"))
         set_flash(request, f"Client '{data.get('name', '')}' updated.")
         return RedirectResponse(url="/clients", status_code=303)
     except (ValidationError, Exception) as e:
@@ -135,10 +135,10 @@ async def update_client_form(
 
 @router.post("", response_model=ClientRead, status_code=201)
 def create_client_api(
-    data: ClientCreate, db: Session = Depends(get_db),
+    data: ClientCreate, request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.create_client(db, data.model_dump())
+    result = service.create_client(db, data.model_dump(), firm_id=request.session.get("firm_id"))
     return ClientRead.model_validate(result)
 
 
@@ -147,15 +147,15 @@ def deactivate_client_form(
     request: Request, client_id: int,
     db: Session = Depends(get_db), _=Depends(require_role(TechnicalRole.admin)),
 ):
-    service.soft_delete_client(db, client_id)
+    service.soft_delete_client(db, client_id, firm_id=request.session.get("firm_id"))
     set_flash(request, "Client deactivated.", "warning")
     return RedirectResponse(url="/clients", status_code=303)
 
 
 @router.patch("/{client_id}", response_model=ClientRead)
 def update_client_api(
-    client_id: int, data: ClientUpdate, db: Session = Depends(get_db),
+    client_id: int, data: ClientUpdate, request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.update_client(db, client_id, data.model_dump(exclude_unset=True))
+    result = service.update_client(db, client_id, data.model_dump(exclude_unset=True), firm_id=request.session.get("firm_id"))
     return ClientRead.model_validate(result)

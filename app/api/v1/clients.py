@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_firm_user, require_api_role
@@ -47,7 +47,7 @@ def get_client(
 
 @router.post("", status_code=201)
 def create_client(
-    body: dict,
+    body: dict, request: Request,
     firm_user: FirmUser = Depends(require_api_role(TechnicalRole.admin, TechnicalRole.moderator)),
     db: Session = Depends(get_db),
 ):
@@ -60,7 +60,7 @@ def create_client(
 
     data = body.copy()
     data["firm_id"] = firm_user.firm_id
-    c = client_service.create_client(db, data)
+    c = client_service.create_client(db, data, firm_id=firm_user.firm_id)
     return {"id": c.id, "name": c.name, "code": c.code}
 
 
@@ -78,7 +78,7 @@ def update_client(
     if result:
         return result
 
-    c = client_service.update_client(db, client_id, body)
+    c = client_service.update_client(db, client_id, body, firm_id=firm_user.firm_id)
     return {"id": c.id, "name": c.name, "code": c.code}
 
 
@@ -95,5 +95,5 @@ def delete_client(
     if result:
         return result
 
-    client_service.soft_delete_client(db, client_id)
+    client_service.soft_delete_client(db, client_id, firm_id=firm_user.firm_id)
     return {"detail": "Client deactivated"}

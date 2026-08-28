@@ -56,9 +56,21 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
 def require_role(*roles: TechnicalRole):
     """Dependency factory: require current user to have one of the given roles in their firm."""
 
-    async def _check(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    async def _check(
+        request: Request,
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        firm_id = request.session.get("firm_id")
+        if not firm_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active firm selected",
+            )
+
         firm_user = db.query(FirmUser).filter(
             FirmUser.user_id == user.id,
+            FirmUser.firm_id == firm_id,
             FirmUser.is_active == True,
         ).first()
 

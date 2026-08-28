@@ -1,39 +1,42 @@
 """OTP service for email verification during registration."""
 
 import logging
-import random
+import hashlib
+import secrets
 import string
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from app.config import settings
+from app.models.models import OTPChallenge
 
 logger = logging.getLogger(__name__)
-
-# In-memory OTP store (for production, use Redis or DB)
-_otp_store: dict[str, dict] = {}
-
-# Rate limiting: track last send time per email
-_last_sent: dict[str, datetime] = {}
 
 # Rate limit constants
 RESEND_COOLDOWN_SECONDS = 60
 MAX_OTP_PER_HOUR = 5
 
 
-def can_resend_otp(email: str) -> tuple[bool, int]:
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def can_resend_otp(db, email: str, purpose: str = "verification") -> tuple[bool, int]:
     """Check if OTP can be resent. Returns (can_resend, seconds_remaining)."""
     now = datetime.now(timezone.utc)
-    last_sent = _last_sent.get(email)
-    if last_sent:
-        elapsed = (now - last_sent).total_seconds()
+    latest = db.query(OTPChallenge).filter(
+        OTPChallenge.email == email,
+        OTPChallenge.purpose == purpose,
+    ).order_by(OTPChallenge.last_sent_at.desc()).first()
+    if latest:
+        elapsed = (now - _as_utc(latest.last_sent_at)).total_seconds()
         if elapsed < RESEND_COOLDOWN_SECONDS:
             return False, int(RESEND_COOLDOWN_SECONDS - elapsed)
     return True, 0
 
 
-def generate_otp(email: str, length: int = 6, purpose: str = "verification") -> str:
+def generate_otp(db, email: str, length: int = 6, purpose: str = "verification") -> str:
     """Generate a numeric OTP and store it with expiry.
     
     Args:
@@ -43,58 +46,68 @@ def generate_otp(email: str, length: int = 6, purpose: str = "verification") -> 
     """
     now = datetime.now(timezone.utc)
     
-    stored = _otp_store.get(email)
-    if stored:
-        if stored.get("hourly_count", 0) >= MAX_OTP_PER_HOUR:
-            if now < stored.get("hourly_reset", now):
-                raise ValueError("Too many OTP requests. Please try again later.")
-            stored["hourly_count"] = 0
-            stored["hourly_reset"] = now + timedelta(hours=1)
-    
-    otp = "".join(random.choices(string.digits, k=length))
-    
-    hourly_count = (stored.get("hourly_count", 0) + 1) if stored else 1
-    hourly_reset = stored.get("hourly_reset", now + timedelta(hours=1)) if stored else now + timedelta(hours=1)
-    
-    _otp_store[email] = {
-        "otp": otp,
-        "expires_at": now + timedelta(minutes=10),
-        "attempts": 0,
-        "hourly_count": hourly_count,
-        "hourly_reset": hourly_reset,
-    }
-    
-    _last_sent[email] = now
+    window_start = now - timedelta(hours=1)
+    hourly_count = db.query(OTPChallenge).filter(
+        OTPChallenge.email == email,
+        OTPChallenge.purpose == purpose,
+        OTPChallenge.last_sent_at >= window_start,
+    ).count()
+    if hourly_count >= MAX_OTP_PER_HOUR:
+        raise ValueError("Too many OTP requests. Please try again later.")
+
+    otp = "".join(secrets.choice(string.digits) for _ in range(length))
+    challenge = OTPChallenge(
+        email=email,
+        purpose=purpose,
+        otp_hash=hashlib.sha256(otp.encode()).hexdigest(),
+        expires_at=now + timedelta(minutes=10),
+        attempts=0,
+        hourly_count=hourly_count + 1,
+        hourly_reset_at=window_start + timedelta(hours=1),
+        last_sent_at=now,
+    )
+    db.add(challenge)
+    db.commit()
     
     try:
         send_otp_email(email, otp, purpose=purpose)
         logger.info(f"OTP sent to {email}")
     except Exception as e:
         logger.error(f"Failed to send OTP email to {email}: {e}")
-        logger.info(f"OTP for {email}: {otp}")
     
     return otp
 
 
-def verify_otp(email: str, otp: str) -> bool:
+def verify_otp(db, email: str, otp: str, purpose: str = "verification") -> bool:
     """Verify OTP. Returns True if valid."""
-    stored = _otp_store.get(email)
+    stored = db.query(OTPChallenge).filter(
+        OTPChallenge.email == email,
+        OTPChallenge.purpose == purpose,
+        OTPChallenge.consumed_at.is_(None),
+    ).order_by(OTPChallenge.created_at.desc()).with_for_update().first()
     if not stored:
         return False
 
     now = datetime.now(timezone.utc)
     
-    if now > stored["expires_at"]:
-        _otp_store.pop(email, None)
+    if now > _as_utc(stored.expires_at):
+        stored.consumed_at = now
+        db.commit()
         return False
 
-    stored["attempts"] += 1
-    if stored["attempts"] > 5:
-        _otp_store.pop(email, None)
+    if stored.attempts >= 5:
+        stored.consumed_at = now
+        db.commit()
         return False
 
-    if stored["otp"] == otp:
-        _otp_store.pop(email, None)
+    stored.attempts += 1
+    valid = secrets.compare_digest(
+        stored.otp_hash, hashlib.sha256(otp.encode()).hexdigest()
+    )
+    if valid:
+        stored.consumed_at = now
+    db.commit()
+    if valid:
         return True
 
     return False

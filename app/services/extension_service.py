@@ -115,6 +115,7 @@ def approve_extension(db: Session, request_id: int, reviewer_id: int,
     from app.services.allocation_service import create_assignment
     assignment = create_assignment(
         db,
+        firm_id=ext.firm_id,
         team_member_id=ext.team_member_id,
         engagement_instance_id=ext.engagement_instance_id,
         allocation_percent=ext.allocation_percent,

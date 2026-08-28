@@ -7,7 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.exceptions import NotFoundError, ValidationError
-from app.models.models import Firm, FirmUser, User
+from app.models.models import Firm, FirmUser, TechnicalRole, User
 from app.services.auth_service import hash_password
 from app.services.license_tiers import check_user_limit
 
@@ -74,7 +74,13 @@ def get_user(db: Session, user_id: int) -> User:
     return user
 
 
-def create_user(db: Session, data: dict, password: Optional[str] = None, firm_id: Optional[int] = None) -> User:
+def create_user(
+    db: Session,
+    data: dict,
+    password: Optional[str] = None,
+    firm_id: Optional[int] = None,
+    firm_role: TechnicalRole = TechnicalRole.viewer,
+) -> User:
     # Check license limit if firm_id provided
     if firm_id:
         firm = db.query(Firm).filter(Firm.id == firm_id).first()
@@ -98,6 +104,9 @@ def create_user(db: Session, data: dict, password: Optional[str] = None, firm_id
     if password:
         user.password_hash = hash_password(password)
     db.add(user)
+    db.flush()
+    if firm_id:
+        db.add(FirmUser(user_id=user.id, firm_id=firm_id, technical_role=firm_role))
     db.commit()
     db.refresh(user)
     return user

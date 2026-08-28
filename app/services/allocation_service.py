@@ -40,6 +40,7 @@ def get_member_allocations(db: Session, firm_id: int | None = None) -> dict:
 
 def create_assignment(
     db: Session,
+    firm_id: int,
     team_member_id: int,
     engagement_instance_id: int,
     allocation_percent: int,
@@ -72,6 +73,8 @@ def create_assignment(
     )
     if not member:
         raise NotFoundError(f"TeamMember {team_member_id} not found")
+    if member.firm_id != firm_id:
+        raise NotFoundError(f"TeamMember {team_member_id} not found")
     if not member.is_active:
         raise ValidationError(f"TeamMember {team_member_id} is not active")
 
@@ -82,6 +85,8 @@ def create_assignment(
         .first()
     )
     if not instance:
+        raise NotFoundError(f"EngagementInstance {engagement_instance_id} not found")
+    if not instance.engagement or instance.engagement.client.firm_id != firm_id:
         raise NotFoundError(f"EngagementInstance {engagement_instance_id} not found")
     if start_date < instance.start_date:
         raise ValidationError(
@@ -162,6 +167,7 @@ def create_assignment(
 
 def update_assignment(
     db: Session,
+    firm_id: int,
     assignment_id: int,
     allocation_percent: Optional[int] = None,
     start_date: Optional[date] = None,
@@ -176,6 +182,8 @@ def update_assignment(
         .first()
     )
     if not assignment:
+        raise NotFoundError(f"Assignment {assignment_id} not found")
+    if not assignment.team_member or assignment.team_member.firm_id != firm_id:
         raise NotFoundError(f"Assignment {assignment_id} not found")
 
     new_start = start_date if start_date is not None else assignment.start_date
@@ -196,6 +204,8 @@ def update_assignment(
         .first()
     )
     if instance:
+        if not instance.engagement or instance.engagement.client.firm_id != firm_id:
+            raise NotFoundError(f"Assignment {assignment_id} not found")
         if new_start < instance.start_date:
             raise ValidationError(
                 f"Assignment start_date ({new_start}) cannot be before engagement instance start ({instance.start_date})"

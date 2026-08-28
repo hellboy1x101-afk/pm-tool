@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.exceptions import NotFoundError
+from app.exceptions import NotFoundError, ValidationError
 from app.models.models import Engagement, EngagementInstance, Client
 
 
@@ -45,26 +45,37 @@ def get_engagement(db: Session, engagement_id: int, firm_id: int | None = None) 
     return eng
 
 
-def create_engagement(db: Session, data: dict) -> Engagement:
-    eng = Engagement(**data)
+def create_engagement(db: Session, data: dict, firm_id: int | None = None) -> Engagement:
+    firm_id = firm_id if firm_id is not None else data.get("firm_id")
+    if firm_id is None:
+        raise ValidationError("An active firm is required")
+    client = db.query(Client).filter(Client.id == data.get("client_id"), Client.firm_id == firm_id).first()
+    if not client:
+        raise NotFoundError("Client not found in active firm")
+    engagement_data = {key: value for key, value in data.items() if key != "firm_id"}
+    eng = Engagement(**engagement_data)
     db.add(eng)
     db.commit()
     db.refresh(eng)
     return eng
 
 
-def update_engagement(db: Session, engagement_id: int, data: dict) -> Engagement:
-    eng = get_engagement(db, engagement_id)
+def update_engagement(db: Session, engagement_id: int, data: dict, firm_id: int) -> Engagement:
+    eng = get_engagement(db, engagement_id, firm_id=firm_id)
+    if "client_id" in data:
+        client = db.query(Client).filter(Client.id == data["client_id"], Client.firm_id == firm_id).first()
+        if not client:
+            raise NotFoundError("Client not found in active firm")
     for key, value in data.items():
-        if value is not None:
+        if key != "firm_id" and value is not None:
             setattr(eng, key, value)
     db.commit()
     db.refresh(eng)
     return eng
 
 
-def soft_delete_engagement(db: Session, engagement_id: int) -> Engagement:
-    eng = get_engagement(db, engagement_id)
+def soft_delete_engagement(db: Session, engagement_id: int, firm_id: int) -> Engagement:
+    eng = get_engagement(db, engagement_id, firm_id=firm_id)
     eng.is_active = False
     db.commit()
     db.refresh(eng)
@@ -107,7 +118,8 @@ def get_instance(db: Session, instance_id: int) -> EngagementInstance:
     return inst
 
 
-def create_instance(db: Session, data: dict) -> EngagementInstance:
+def create_instance(db: Session, data: dict, firm_id: int) -> EngagementInstance:
+    get_engagement(db, data["engagement_id"], firm_id=firm_id)
     inst = EngagementInstance(**data)
     db.add(inst)
     db.commit()
@@ -115,8 +127,10 @@ def create_instance(db: Session, data: dict) -> EngagementInstance:
     return inst
 
 
-def update_instance(db: Session, instance_id: int, data: dict) -> EngagementInstance:
+def update_instance(db: Session, instance_id: int, data: dict, firm_id: int) -> EngagementInstance:
     inst = get_instance(db, instance_id)
+    if inst.engagement.client.firm_id != firm_id:
+        raise NotFoundError(f"EngagementInstance {instance_id} not found")
     for key, value in data.items():
         if value is not None:
             setattr(inst, key, value)
