@@ -5,7 +5,7 @@
 ### Prerequisites
 - GitHub account with the `pm-tool` repository
 - Render account (free at [render.com](https://render.com))
-- Neon PostgreSQL database
+- Supabase PostgreSQL project
 
 ---
 
@@ -38,7 +38,7 @@ git push origin main
 | **Branch** | `main` |
 | **Runtime** | `Python 3` |
 | **Build Command** | `pip install -r requirements.txt` |
-| **Start Command** | `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| **Start Command** | `alembic upgrade head && gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT` |
 | **Instance Type** | Free or paid for production |
 
 ---
@@ -47,7 +47,7 @@ git push origin main
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `DATABASE_URL` | `postgresql://...` | Neon PostgreSQL connection string |
+| `DATABASE_URL` | `postgresql://...` | Supabase Session Pooler URL; use port 5432 and `sslmode=require` |
 | `SECRET_KEY` | Generate: `python -c "import secrets; print(secrets.token_hex(32))"` | Must be unique |
 | `ENV` | `production` | |
 | `LICENSE_SIGNING_KEY` | Generate: `python -c "import secrets; print(secrets.token_hex(32))"` | For license validation |
@@ -77,6 +77,11 @@ git push origin main
 2. Wait for build to complete (2-5 minutes)
 3. Check logs for errors
 4. Access your app at the Render URL
+
+After deployment, confirm the logs contain `Running 'alembic upgrade head ...'`
+and that the migration reaches the current head. The application database user
+must be able to run migrations and bypass RLS; do not use an anonymous or
+authenticated API key as `DATABASE_URL`.
 
 ---
 

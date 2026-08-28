@@ -1,1 +1,4 @@
 Generic single-database configuration.
+
+Production uses Supabase PostgreSQL through the `DATABASE_URL` environment
+variable. Run `alembic upgrade head` before starting the application.

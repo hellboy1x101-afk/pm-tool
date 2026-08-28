@@ -576,7 +576,7 @@
                 <tr>
                     <td>Hosting</td>
                     <td><strong>Render</strong></td>
-                    <td>Web service + managed database (Neon)</td>
+                    <td>Web service + Supabase PostgreSQL</td>
                 </tr>
             </tbody>
         </table>
@@ -598,7 +598,7 @@
 
         <h3>Key Design Decisions</h3>
         <ul>
-            <li><strong>Multi-tenant by design</strong> — Every model is scoped to a <code>firm_id</code>. Row-level security ensures firms cannot access each other's data.</li>
+            <li><strong>Multi-tenant by design</strong> — Firm-owned data is scoped to a <code>firm_id</code>. PostgreSQL RLS is enabled on public tables and denies unconfigured PostgREST roles by default.</li>
             <li><strong>SSR first, API second</strong> — The primary interface is server-rendered HTML. The API layer (<code>/api/v1</code>) exists for the planned Next.js frontend migration.</li>
             <li><strong>Middleware-driven auth</strong> — A session middleware (<code>app/middleware/</code>) handles authentication state across both SSR and API requests.</li>
             <li><strong>Approval workflows</strong> — Built-in approval system for leave requests, engagement extensions, and other firm-defined actions.</li>

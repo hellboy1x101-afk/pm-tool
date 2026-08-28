@@ -19,13 +19,13 @@
 |-------|-----------|-------|
 | Backend | FastAPI | Python 3.11+ |
 | Templates | Jinja2 + Tailwind/Franken UI | Server-side rendering only |
-| Database | PostgreSQL (Neon on Render) | Sync SQLAlchemy |
+| Database | PostgreSQL (Supabase) | Sync SQLAlchemy; `DATABASE_URL` is supplied by Render |
 | ORM | SQLAlchemy sync | Not async |
 | Migrations | Alembic | All schema changes via migrations |
 | Deployment | Render | Build/start commands in render.yaml |
 | Auth | DIY (Password + MS365 OAuth + 2FA + OTP) | bcrypt + TOTP + OAuth OIDC + JWT |
 | CSRF | Library-based | Shared macro in templates |
-| Email | SMTP (Zoho) | Async outbox worker |
+| Email | SMTP (ZeptoMail) | OTP delivery and async outbox worker |
 | Frontend API | JWT-based API v1 | For Next.js frontend |
 
 ---
@@ -77,6 +77,11 @@
 | `ExtensionStatus` | `pending`, `approved`, `rejected` |
 
 ### Tables (19 total)
+
+All tables are in the PostgreSQL `public` schema. RLS is enabled by the
+`f2b3c4d5e6f7` migration; no public policies are defined, so PostgREST API
+roles are denied by default. The server connects with a privileged database
+role for its SQLAlchemy queries.
 
 #### Firm (`firms`)
 - `id` (Integer, PK)
@@ -513,14 +518,20 @@ create_engine(
 
 ---
 
-## Alembic Migrations (6 total)
+## Alembic Migrations (12 total)
 
 1. `4894207a1570` — Initial (core tables)
 2. `fb332ebe2708` — Auth fields (password_hash, totp)
 3. `b9f07d65b257` — Multi-tenancy (firms, branches, firm_users, approval_rules/requests)
 4. `c249c56b7b7c` — Extension requests
 5. `968d26aaac9c` — Allowed domains on firms
-6. `a1b2c3d4e5f6` — Licensing (super_admins, license columns)
+6. `a1b2c3d4e5f6` — Licensing (super_admins, firm license metadata)
+7. `b2c3d4e5f6a7` — Password expiry policy
+8. `d3e4f5a6b7c8` — Super-admin TOTP and license inventory
+9. `e4f5a6b7c8d9` — Developer portal users
+10. `f1a2b3c4d5e6` — User soft-delete fields
+11. `f2b3c4d5e6f7` — Enable RLS on public tables
+12. `f3c4d5e6f7a8` — Firm license key compatibility column
 
 ---
 
@@ -537,10 +548,14 @@ create_engine(
 
 ## Deployment
 
-- `render.yaml` — service name: `staffplan`, build: pip install, start: `alembic upgrade head && uvicorn`
+- `render.yaml` — service name: `staffplan`, build: pip install, start: `alembic upgrade head && gunicorn ...`
 - `.env.example` — all required keys including LICENSE_SIGNING_KEY, SMTP config
-- Database: Neon PostgreSQL
+- Database: Supabase PostgreSQL; use the Session Pooler URL on Render
 - Email: ZeptoMail SMTP (smtp.zeptomail.in:587, STARTTLS)
+
+`DATABASE_URL` must be a URL-encoded PostgreSQL connection string. Direct
+Supabase database hosts may resolve to IPv6, which is unavailable on some
+Render services; prefer the Session Pooler URL on port 5432.
 
 ---
 

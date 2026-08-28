@@ -4,9 +4,12 @@ Staffing & resource planning platform for CA firms.
 
 ## Tech Stack
 - **Backend:** FastAPI + Jinja2 (server-rendered)
-- **Database:** PostgreSQL (Neon)
+- **Database:** PostgreSQL (Supabase)
 - **Auth:** Password + OTP + 2FA + MS365 OAuth + JWT
 - **Deployment:** Render
+
+The application connects to Supabase PostgreSQL through `DATABASE_URL`. Render
+does not provision the database; set this secret manually in the Render service.
 
 ## Features
 - Multi-tenant with firm/branch support
@@ -24,6 +27,10 @@ pip install -r requirements.txt
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+For production, use the Supabase Session Pooler connection string with
+`sslmode=require`. URL-encode reserved characters in the database password.
+Render runs `alembic upgrade head` before starting the web service.
 
 ## Documentation
 - `CONTEXT.md` — Full project context for AI agents

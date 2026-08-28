@@ -78,15 +78,15 @@
 ---
 
 ## Key URLs
-- **Render:** https://pm-tool-5pg6.onrender.com
-- **Custom Domain:** https://pkf.skilledca.in
+- **Render:** https://app.skilledca.in
+- **Custom Domain:** https://app.skilledca.in
 - **Login:** /auth/login
 - **Dashboard:** /dashboard
 
 ---
 
 ## Environment Variables
-- `DATABASE_URL` — Neon PostgreSQL connection string
+- `DATABASE_URL` — Supabase Session Pooler PostgreSQL connection string
 - `SECRET_KEY` — App secret key
 - `ENV` — production/development
 - `TESTING` — false (must be true to run tests against DB)
