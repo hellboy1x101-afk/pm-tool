@@ -1,15 +1,20 @@
+import logging
 import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.email_worker import email_worker_lifespan
+
+logger = logging.getLogger(__name__)
 from app.exceptions import (
     ConflictWithLeaveError,
     NotFoundError,
@@ -242,3 +247,29 @@ async def not_found_page_handler(request: Request, exc):
     if "text/html" in request.headers.get("accept", ""):
         return templates.TemplateResponse(request, "errors/404.html", status_code=404)
     return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """Invalid input: friendly page for browsers, FastAPI's usual 422 body for API clients."""
+    if "text/html" in request.headers.get("accept", ""):
+        return templates.TemplateResponse(request, "errors/error.html", {
+            "status_code": 422, "detail": "Some of the submitted information was invalid. Please check and try again.",
+        }, status_code=422)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Last resort: log the full error server-side, never show internals to the user."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    if "text/html" in request.headers.get("accept", ""):
+        try:
+            return templates.TemplateResponse(request, "errors/500.html", status_code=500)
+        except Exception:
+            logger.exception("Failed to render errors/500.html")
+            return HTMLResponse(
+                "<h1>Something went wrong</h1><p>Please try again. If it keeps happening, contact support.</p>",
+                status_code=500,
+            )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
