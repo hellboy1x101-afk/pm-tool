@@ -173,13 +173,19 @@ def activate_license(db: Session, firm_id: int, license_key: str, user_id: int) 
     firm.license_expires_at = new_expires
     firm.license_activated_at = now
 
-    # Promote user to super_admin if not already (license activator becomes super admin)
+    # Bootstrap: the admin who activates the first license becomes the firm's super admin.
+    # Never promote once the firm already has one, or activation becomes a way to escalate.
+    has_super_admin = db.query(FirmUser).filter(
+        FirmUser.firm_id == firm_id,
+        FirmUser.technical_role == TechnicalRole.super_admin,
+        FirmUser.is_active == True,
+    ).count() > 0
     firm_user = (
         db.query(FirmUser)
         .filter(FirmUser.firm_id == firm_id, FirmUser.user_id == user_id)
         .first()
     )
-    if firm_user and firm_user.technical_role != TechnicalRole.super_admin:
+    if firm_user and not has_super_admin:
         firm_user.technical_role = TechnicalRole.super_admin
 
     db.commit()
