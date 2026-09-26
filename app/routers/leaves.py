@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, require_role
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import ValidationError
+from app.exceptions import ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.schemas.schemas import LeaveCreate, LeaveRead, LeaveUpdate
@@ -96,7 +96,7 @@ async def create_leave_form(
         service.create_leave(db, data, firm_id=firm_id)
         return RedirectResponse(url="/leaves", status_code=303)
     except (ValidationError, Exception) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     return templates.TemplateResponse(request, "leaves/form.html", {
         "leave": None, "action": "/leaves/new", "errors": errors,
@@ -142,7 +142,7 @@ async def update_leave_form(
         set_flash(request, "Leave updated.")
         return RedirectResponse(url="/leaves", status_code=303)
     except (ValidationError, Exception) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     leave = service.get_leave(db, leave_id, firm_id=firm_id)
     return templates.TemplateResponse(request, "leaves/form.html", {

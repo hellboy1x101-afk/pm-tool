@@ -10,7 +10,7 @@ from app.auth.auth import get_current_user, require_role
 from app.config import settings
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import NotFoundError, ValidationError
+from app.exceptions import NotFoundError, ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole, TeamMember
 from app.schemas.schemas import (
@@ -107,9 +107,9 @@ async def create_team_member_form(
         set_flash(request, f"Team member '{data['name']}' created successfully.")
         return RedirectResponse(url="/team-members", status_code=303)
     except ValidationError as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     return templates.TemplateResponse(request, "team_members/form.html", {
         "member": None, "action": "/team-members/new", "errors": errors, "csrf_token": get_csrf_token(request),
@@ -171,7 +171,7 @@ async def update_team_member_form(
         set_flash(request, "Team member updated successfully.")
         return RedirectResponse(url=f"/team-members/{member_id}", status_code=303)
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     member = service.get_team_member(db, member_id, firm_id=firm_id)
     return templates.TemplateResponse(request, "team_members/form.html", {
@@ -232,7 +232,9 @@ def bulk_upload(
         raise HTTPException(status_code=400, detail=f"File exceeds {settings.CSV_MAX_FILE_SIZE_MB}MB")
 
     from app.services.settings_service import get_setting_value
-    max_rows_str = get_setting_value(db, "bulk_upload_max_rows", str(settings.BULK_UPLOAD_MAX_ROWS))
+    max_rows_str = get_setting_value(
+        db, "bulk_upload_max_rows", request.session.get("firm_id"), default=str(settings.BULK_UPLOAD_MAX_ROWS),
+    )
     max_rows = int(max_rows_str)
 
     reader = csv.DictReader(io.StringIO(contents.decode("utf-8-sig")))
@@ -262,10 +264,10 @@ def bulk_upload(
             service.create_team_member(db, validated.model_dump(), firm_id=request.session.get("firm_id"))
             inserted += 1
         except ValidationError as e:
-            errors.append(BulkUploadError(row=idx, field="", reason=str(e)))
+            errors.append(BulkUploadError(row=idx, field="", reason=user_message(e, db)))
             failed += 1
         except Exception as e:
-            errors.append(BulkUploadError(row=idx, field="", reason=str(e)))
+            errors.append(BulkUploadError(row=idx, field="", reason=user_message(e, db)))
             failed += 1
 
     msg = f"Bulk upload: {inserted} inserted, {failed} failed."
@@ -313,6 +315,6 @@ async def create_extension_form(
         )
         set_flash(request, "Extension request submitted for approval")
     except Exception as e:
-        set_flash(request, f"Error: {e}", "danger")
+        set_flash(request, user_message(e, db), "danger")
 
     return RedirectResponse(url=f"/team-members/{member_id}", status_code=303)

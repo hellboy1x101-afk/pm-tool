@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, require_role
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import ConflictWithLeaveError, NotFoundError, OverAllocationError, ValidationError
+from app.exceptions import ConflictWithLeaveError, NotFoundError, OverAllocationError, ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.schemas.schemas import AssignmentCreate, AssignmentRead, AssignmentUpdate
@@ -71,6 +71,7 @@ def assign_staff_page(
 
 @router.get("/json", response_model=dict)
 def list_assignments_json(
+    request: Request,
     limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
     team_member_id: Optional[int] = None, engagement_instance_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -146,10 +147,10 @@ async def create_assignment_form(
         return RedirectResponse(url="/assignments", status_code=303)
     except (OverAllocationError, ConflictWithLeaveError, ValidationError, NotFoundError) as e:
         logger.debug("Validation error: %s", e)
-        errors.append(str(e))
+        errors.append(user_message(e, db))
     except Exception as e:
         logger.warning("Unexpected error creating assignment: %s: %s", type(e).__name__, e)
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     members, _ = team_member_service.list_team_members(db, firm_id=firm_id, limit=200, is_active=True)
     instances, _ = engagement_service.list_instances(db, firm_id=firm_id, limit=200)
@@ -184,10 +185,10 @@ def edit_assignment_form(
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    assignment = service.get_assignment(db, assignment_id)
+    firm_id = request.session.get("firm_id")
+    assignment = service.get_assignment(db, assignment_id, firm_id=firm_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    firm_id = request.session.get("firm_id")
     members, _ = team_member_service.list_team_members(db, firm_id=firm_id, limit=200, is_active=True)
     instances, _ = engagement_service.list_instances(db, firm_id=firm_id, limit=200)
     return templates.TemplateResponse(request, "assignments/form.html", {
@@ -235,12 +236,12 @@ async def update_assignment_form(
             )
         return RedirectResponse(url="/dashboard", status_code=303)
     except (OverAllocationError, ConflictWithLeaveError, ValidationError, NotFoundError) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
-    assignment = service.get_assignment(db, assignment_id)
     firm_id = request.session.get("firm_id")
+    assignment = service.get_assignment(db, assignment_id, firm_id=firm_id)
     members, _ = team_member_service.list_team_members(db, firm_id=firm_id, limit=200, is_active=True)
     instances, _ = engagement_service.list_instances(db, firm_id=firm_id, limit=200)
     return templates.TemplateResponse(request, "assignments/form.html", {
@@ -256,7 +257,7 @@ async def update_assignment_form(
 
 @router.patch("/{assignment_id}", response_model=AssignmentRead)
 def update_assignment_api(
-    assignment_id: int, data: AssignmentUpdate, db: Session = Depends(get_db),
+    assignment_id: int, data: AssignmentUpdate, request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
     try:

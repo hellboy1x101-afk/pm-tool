@@ -11,6 +11,7 @@ from app.auth.auth import require_role
 from app.config import settings
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
+from app.exceptions import user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.services.invitation_service import (
@@ -233,7 +234,7 @@ async def bulk_invite(
             sent += 1
         except Exception as e:
             failed += 1
-            errors.append(f"{email}: {str(e)}")
+            errors.append(f"{email}: {user_message(e, db)}")
     
     return templates.TemplateResponse(request, "invitations/bulk.html", {
         "csrf_token": get_csrf_token(request),

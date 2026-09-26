@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, require_role
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import ValidationError
+from app.exceptions import ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.schemas.schemas import (
@@ -95,7 +95,7 @@ async def create_engagement_form(
         service.create_engagement(db, data, firm_id=firm_id)
         return RedirectResponse(url="/engagements", status_code=303)
     except (ValidationError, Exception) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     clients, _ = client_service.list_clients(db, firm_id=firm_id, limit=200, is_active=True)
     return templates.TemplateResponse(request, "engagements/form.html", {
@@ -144,7 +144,7 @@ async def create_instance_form(
         set_flash(request, f"Instance '{data['period_label']}' created.")
         return RedirectResponse(url=f"/engagements/{engagement_id}", status_code=303)
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     firm_id = request.session.get("firm_id")
     engagement = service.get_engagement(db, engagement_id, firm_id=firm_id)
@@ -195,7 +195,7 @@ async def update_engagement_form(
         set_flash(request, "Engagement updated.")
         return RedirectResponse(url="/engagements", status_code=303)
     except (ValidationError, Exception) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     engagement = service.get_engagement(db, engagement_id, firm_id=firm_id)
     firm_id = request.session.get("firm_id")
