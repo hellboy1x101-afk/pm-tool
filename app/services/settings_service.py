@@ -6,16 +6,25 @@ from app.exceptions import NotFoundError
 from app.models.models import SystemSetting
 
 
-def get_setting(db: Session, key: str, firm_id: int | None = None) -> Optional[SystemSetting]:
-    """Get a setting. If firm_id provided, returns firm-specific or global (NULL firm_id) setting."""
+# Settings are stored as platform defaults (firm_id NULL) plus optional per-firm overrides.
+# Reads fall back from the firm's override to the default; writes made on behalf of a firm
+# only ever create/update that firm's own row, so one firm can never change another's value.
+
+
+def _row(db: Session, key: str, firm_id: int | None) -> Optional[SystemSetting]:
     query = db.query(SystemSetting).filter(SystemSetting.key == key)
+    if firm_id is None:
+        return query.filter(SystemSetting.firm_id.is_(None)).first()
+    return query.filter(SystemSetting.firm_id == firm_id).first()
+
+
+def get_setting(db: Session, key: str, firm_id: int | None = None) -> Optional[SystemSetting]:
+    """Effective setting: the firm's override if present, else the platform default."""
     if firm_id is not None:
-        # Prefer firm-specific, fallback to global
-        setting = query.filter(SystemSetting.firm_id == firm_id).first()
+        setting = _row(db, key, firm_id)
         if setting:
             return setting
-        return query.filter(SystemSetting.firm_id.is_(None)).first()
-    return query.first()
+    return _row(db, key, None)
 
 
 def get_setting_value(db: Session, key: str, firm_id: int | None = None, default: str = "") -> str:
@@ -25,10 +34,14 @@ def get_setting_value(db: Session, key: str, firm_id: int | None = None, default
 
 def update_setting(db: Session, key: str, value: str, updated_by_user_id: Optional[int] = None,
                    firm_id: int | None = None):
-    setting = get_setting(db, key, firm_id)
+    """Write the firm's own override, or the platform default when firm_id is None."""
+    setting = _row(db, key, firm_id)
     if not setting:
-        # Create firm-specific setting
-        setting = SystemSetting(key=key, value=value, firm_id=firm_id, updated_by_user_id=updated_by_user_id)
+        default = _row(db, key, None) if firm_id is not None else None
+        setting = SystemSetting(
+            key=key, value=value, firm_id=firm_id, updated_by_user_id=updated_by_user_id,
+            description=default.description if default else None,
+        )
         db.add(setting)
     else:
         setting.value = value
@@ -39,15 +52,13 @@ def update_setting(db: Session, key: str, value: str, updated_by_user_id: Option
 
 
 def list_all_settings(db: Session, firm_id: int | None = None):
-    """List settings: firm-specific + global (NULL firm_id)."""
-    query = db.query(SystemSetting)
+    """Effective settings for a firm (one row per key), or the platform defaults when firm_id is None."""
+    defaults = db.query(SystemSetting).filter(SystemSetting.firm_id.is_(None)).all()
+    effective = {s.key: s for s in defaults}
     if firm_id is not None:
-        from sqlalchemy import or_
-        query = query.filter(or_(
-            SystemSetting.firm_id == firm_id,
-            SystemSetting.firm_id.is_(None),
-        ))
-    return query.order_by(SystemSetting.key).all()
+        for s in db.query(SystemSetting).filter(SystemSetting.firm_id == firm_id).all():
+            effective[s.key] = s
+    return [effective[key] for key in sorted(effective)]
 
 
 def get_auth_method(db: Session, firm_id: int | None = None) -> str:

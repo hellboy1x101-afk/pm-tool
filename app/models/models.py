@@ -454,8 +454,8 @@ class SystemSetting(Base):
     __tablename__ = "system_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    firm_id = Column(Integer, ForeignKey("firms.id", ondelete="SET NULL"), nullable=True)
-    key = Column(String(255), unique=True, nullable=False)
+    firm_id = Column(Integer, ForeignKey("firms.id", ondelete="CASCADE"), nullable=True)
+    key = Column(String(255), nullable=False)
     value = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -465,6 +465,12 @@ class SystemSetting(Base):
     )
 
     firm = relationship("Firm")
+
+    # One platform default per key, and at most one override per firm per key.
+    __table_args__ = (
+        Index("uq_system_settings_default_key", "key", unique=True, postgresql_where=firm_id.is_(None)),
+        Index("uq_system_settings_firm_key", "firm_id", "key", unique=True, postgresql_where=firm_id.isnot(None)),
+    )
 
 
 class EmailOutbox(Base):
