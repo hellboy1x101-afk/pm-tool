@@ -55,8 +55,17 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     )
 
 
+def effective_roles(roles: tuple[TechnicalRole, ...]) -> set[TechnicalRole]:
+    """Super admins can do everything admins can."""
+    allowed = set(roles)
+    if TechnicalRole.admin in allowed:
+        allowed.add(TechnicalRole.super_admin)
+    return allowed
+
+
 def require_role(*roles: TechnicalRole):
     """Dependency factory: require current user to have one of the given roles in their firm."""
+    allowed = effective_roles(roles)
 
     async def _check(
         request: Request,
@@ -76,7 +85,7 @@ def require_role(*roles: TechnicalRole):
             FirmUser.is_active == True,
         ).first()
 
-        if not firm_user or firm_user.technical_role not in roles:
+        if not firm_user or firm_user.technical_role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

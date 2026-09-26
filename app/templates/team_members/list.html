@@ -10,7 +10,7 @@
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">Team Members</h2>
         <div class="flex gap-2">
-            {% if request.session.get("user_role") in ["admin", "moderator"] %}
+            {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
             <a href="/team-members/new" class="uk-btn uk-btn-primary uk-btn-sm">
                 <uk-icon icon="plus" width="14" height="14" class="mr-1"></uk-icon>Add Member
             </a>

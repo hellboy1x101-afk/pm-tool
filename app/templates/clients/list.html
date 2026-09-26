@@ -9,7 +9,7 @@
 <div class="uk-card uk-card-body uk-margin">
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">Clients</h2>
-        {% if request.session.get("user_role") in ["admin", "moderator"] %}
+        {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
         <a href="/clients/new" class="uk-btn uk-btn-primary uk-btn-sm">
             <span uk-icon="icon: plus; ratio: 0.8" class="mr-1"></span>Add Client
         </a>
@@ -27,7 +27,7 @@
                     <th>Industry</th>
                     <th>Active</th>
                     <th>Created</th>
-                    {% if request.session.get("user_role") in ["admin", "moderator"] %}
+                    {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
                     <th>Actions</th>
                     {% endif %}
                 </tr>
@@ -46,12 +46,12 @@
                         {% endif %}
                     </td>
                     <td>{{ client.created_at.strftime('%Y-%m-%d') if client.created_at else "—" }}</td>
-                    {% if request.session.get("user_role") in ["admin", "moderator"] %}
+                    {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
                     <td class="flex gap-1">
                         <a href="/clients/{{ client.id }}/edit" class="uk-btn uk-btn-default uk-btn-sm uk-btn-icon" uk-tooltip="Edit">
                             <uk-icon icon="pencil" width="14" height="14"></uk-icon>
                         </a>
-                        {% if request.session.get("user_role") == "admin" and client.is_active %}
+                        {% if request.session.get("user_role") in ["super_admin", "admin"] and client.is_active %}
                         <form method="POST" action="/clients/{{ client.id }}/deactivate" class="inline"
                               onsubmit="return confirm('Deactivate this client?')">
                             {{ csrf_field(csrf_token) }}

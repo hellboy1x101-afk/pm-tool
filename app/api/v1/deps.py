@@ -53,9 +53,12 @@ async def get_current_firm_user(
 
 def require_api_role(*roles: TechnicalRole):
     """Dependency factory: require current user to have one of the given roles in their firm."""
+    from app.auth.auth import effective_roles
+
+    allowed = effective_roles(roles)
 
     async def _check(firm_user: FirmUser = Depends(get_current_firm_user)) -> FirmUser:
-        if firm_user.technical_role not in roles:
+        if firm_user.technical_role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
