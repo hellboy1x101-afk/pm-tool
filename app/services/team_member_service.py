@@ -49,21 +49,24 @@ def get_team_member(db: Session, member_id: int, firm_id: int | None = None) -> 
     return member
 
 
-def create_team_member(db: Session, data: dict) -> TeamMember:
+def create_team_member(db: Session, data: dict, firm_id: int | None = None) -> TeamMember:
+    firm_id = firm_id if firm_id is not None else data.get("firm_id")
+    if firm_id is None:
+        raise ValidationError("An active firm is required")
+    data = {**data, "firm_id": firm_id}
+
     # Check license limit
-    firm_id = data.get("firm_id")
-    if firm_id:
-        firm = db.query(Firm).filter(Firm.id == firm_id).first()
-        if firm and firm.license_tier:
-            current_count = db.query(TeamMember).filter(
-                TeamMember.firm_id == firm_id,
-                TeamMember.is_active == True,
-            ).count()
-            if not check_team_member_limit(firm.license_tier, current_count):
-                raise ValidationError(
-                    f"Team member limit reached for {firm.license_tier} tier. "
-                    f"Upgrade your license to add more team members."
-                )
+    firm = db.query(Firm).filter(Firm.id == firm_id).first()
+    if firm and firm.license_tier:
+        current_count = db.query(TeamMember).filter(
+            TeamMember.firm_id == firm_id,
+            TeamMember.is_active == True,
+        ).count()
+        if not check_team_member_limit(firm.license_tier, current_count):
+            raise ValidationError(
+                f"Team member limit reached for {firm.license_tier} tier. "
+                f"Upgrade your license to add more team members."
+            )
 
     existing = db.query(TeamMember).filter(TeamMember.email == data["email"]).first()
     if existing:
@@ -75,28 +78,28 @@ def create_team_member(db: Session, data: dict) -> TeamMember:
     return member
 
 
-def update_team_member(db: Session, member_id: int, data: dict) -> TeamMember:
-    member = get_team_member(db, member_id)
+def update_team_member(db: Session, member_id: int, data: dict, firm_id: int) -> TeamMember:
+    member = get_team_member(db, member_id, firm_id=firm_id)
     for key, value in data.items():
-        if value is not None:
+        if key != "firm_id" and value is not None:
             setattr(member, key, value)
     db.commit()
     db.refresh(member)
     return member
 
 
-def soft_delete_team_member(db: Session, member_id: int) -> TeamMember:
-    member = get_team_member(db, member_id)
+def soft_delete_team_member(db: Session, member_id: int, firm_id: int) -> TeamMember:
+    member = get_team_member(db, member_id, firm_id=firm_id)
     member.is_active = False
     db.commit()
     db.refresh(member)
     return member
 
 
-def bulk_deactivate(db: Session, member_ids: list[int]) -> int:
+def bulk_deactivate(db: Session, member_ids: list[int], firm_id: int) -> int:
     count = (
         db.query(TeamMember)
-        .filter(TeamMember.id.in_(member_ids))
+        .filter(TeamMember.id.in_(member_ids), TeamMember.firm_id == firm_id)
         .update({"is_active": False}, synchronize_session="fetch")
     )
     db.commit()

@@ -91,7 +91,6 @@ class TeamMemberCreate(BaseModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole = TechnicalRole.viewer
     business_role: BusinessRole
     is_oversight_only: bool = False
     seniority_level: Optional[str] = None
@@ -102,7 +101,6 @@ class TeamMemberUpdate(BaseModel):
     employee_code: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
-    technical_role: Optional[TechnicalRole] = None
     business_role: Optional[BusinessRole] = None
     is_oversight_only: Optional[bool] = None
     seniority_level: Optional[str] = None
@@ -115,7 +113,6 @@ class TeamMemberRead(ORMModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole
     business_role: BusinessRole
     is_oversight_only: bool
     seniority_level: Optional[str] = None
@@ -312,7 +309,6 @@ class BulkUploadRow(BaseModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole = TechnicalRole.viewer
     business_role: BusinessRole
     is_oversight_only: bool = False
     seniority_level: Optional[str] = None

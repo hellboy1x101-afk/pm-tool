@@ -74,9 +74,7 @@ def create_team_member(
     if result:
         return result
 
-    data = body.copy()
-    data["firm_id"] = firm_user.firm_id
-    m = team_member_service.create_team_member(db, data)
+    m = team_member_service.create_team_member(db, body, firm_id=firm_user.firm_id)
     return {"id": m.id, "name": m.name, "email": m.email}
 
 
@@ -94,7 +92,7 @@ def update_team_member(
     if result:
         return result
 
-    m = team_member_service.update_team_member(db, member_id, body)
+    m = team_member_service.update_team_member(db, member_id, body, firm_id=firm_user.firm_id)
     return {"id": m.id, "name": m.name, "email": m.email}
 
 
@@ -111,5 +109,5 @@ def delete_team_member(
     if result:
         return result
 
-    team_member_service.soft_delete_team_member(db, member_id)
+    team_member_service.soft_delete_team_member(db, member_id, firm_id=firm_user.firm_id)
     return {"detail": "Team member deactivated"}

@@ -45,12 +45,19 @@ def list_leaves_json(
     return {"items": [LeaveRead.model_validate(l) for l in items], "total": total, "limit": limit, "offset": offset}
 
 
+def _firm_members(db: Session, request: Request):
+    members, _total = team_member_service.list_team_members(
+        db, firm_id=request.session.get("firm_id"), limit=200, is_active=True,
+    )
+    return members
+
+
 @router.get("/new", response_class=HTMLResponse)
 def new_leave_form(
     request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    members, _ = team_member_service.list_team_members(db, limit=200, is_active=True)
+    members = _firm_members(db, request)
     return templates.TemplateResponse(request, "leaves/form.html", {
         "leave": None, "action": "/leaves/new", "errors": [],
         "members": members, "csrf_token": get_csrf_token(request),
@@ -60,7 +67,7 @@ def new_leave_form(
 @router.post("/new")
 async def create_leave_form(
     request: Request, db: Session = Depends(get_db),
-    _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
+    user=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
     form_data = await request.form()
     if not validate_csrf(request, form_data.get("csrf_token")):
@@ -80,21 +87,20 @@ async def create_leave_form(
         from app.approval_check import check_approval
         from app.models.models import ResourceType, OperationType
         firm_id = request.session.get("firm_id")
-        result = check_approval(db, firm_id, _.id, ResourceType.leave, OperationType.create, data)
+        result = check_approval(db, firm_id, user.id, ResourceType.leave, OperationType.create, data)
         if result:
             set_flash(request, "Leave request submitted for admin approval.")
             referer = request.headers.get("referer", "/leaves")
             return RedirectResponse(url=referer, status_code=303)
 
-        service.create_leave(db, data)
+        service.create_leave(db, data, firm_id=firm_id)
         return RedirectResponse(url="/leaves", status_code=303)
     except (ValidationError, Exception) as e:
         errors.append(str(e))
 
-    members, _ = team_member_service.list_team_members(db, limit=200, is_active=True)
     return templates.TemplateResponse(request, "leaves/form.html", {
         "leave": None, "action": "/leaves/new", "errors": errors,
-        "members": [str(m.id) for m in members],
+        "members": _firm_members(db, request),
         "csrf_token": get_csrf_token(request),
     })
 
@@ -104,11 +110,10 @@ def edit_leave_form(
     request: Request, leave_id: int,
     db: Session = Depends(get_db), _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    leave = service.get_leave(db, leave_id)
-    members, _ = team_member_service.list_team_members(db, limit=200, is_active=True)
+    leave = service.get_leave(db, leave_id, firm_id=request.session.get("firm_id"))
     return templates.TemplateResponse(request, "leaves/form.html", {
         "leave": leave, "action": f"/leaves/{leave_id}/edit", "errors": [],
-        "members": [str(m.id) for m in members],
+        "members": _firm_members(db, request),
         "csrf_token": get_csrf_token(request),
     })
 
@@ -129,37 +134,39 @@ async def update_leave_form(
         if val:
             data[key] = val
 
+    firm_id = request.session.get("firm_id")
     try:
         if "team_member_id" in data:
             data["team_member_id"] = int(data["team_member_id"])
-        service.update_leave(db, leave_id, data)
+        service.update_leave(db, leave_id, data, firm_id=firm_id)
         set_flash(request, "Leave updated.")
         return RedirectResponse(url="/leaves", status_code=303)
     except (ValidationError, Exception) as e:
         errors.append(str(e))
 
-    leave = service.get_leave(db, leave_id)
-    members, _ = team_member_service.list_team_members(db, limit=200, is_active=True)
+    leave = service.get_leave(db, leave_id, firm_id=firm_id)
     return templates.TemplateResponse(request, "leaves/form.html", {
         "leave": leave, "action": f"/leaves/{leave_id}/edit", "errors": errors,
-        "members": [str(m.id) for m in members],
+        "members": _firm_members(db, request),
         "csrf_token": get_csrf_token(request),
     })
 
 
 @router.post("", response_model=LeaveRead, status_code=201)
 def create_leave_api(
-    data: LeaveCreate, db: Session = Depends(get_db),
+    data: LeaveCreate, request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.create_leave(db, data.model_dump())
+    result = service.create_leave(db, data.model_dump(), firm_id=request.session.get("firm_id"))
     return LeaveRead.model_validate(result)
 
 
 @router.patch("/{leave_id}", response_model=LeaveRead)
 def update_leave_api(
-    leave_id: int, data: LeaveUpdate, db: Session = Depends(get_db),
+    leave_id: int, data: LeaveUpdate, request: Request, db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.update_leave(db, leave_id, data.model_dump(exclude_unset=True))
+    result = service.update_leave(
+        db, leave_id, data.model_dump(exclude_unset=True), firm_id=request.session.get("firm_id"),
+    )
     return LeaveRead.model_validate(result)

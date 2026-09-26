@@ -54,7 +54,7 @@ def create_leave(
     if result:
         return result
 
-    l = leave_service.create_leave(db, body)
+    l = leave_service.create_leave(db, body, firm_id=firm_user.firm_id)
     return {"id": l.id, "team_member_id": l.team_member_id}
 
 
@@ -72,5 +72,5 @@ def update_leave(
     if result:
         return result
 
-    l = leave_service.update_leave(db, leave_id, body)
+    l = leave_service.update_leave(db, leave_id, body, firm_id=firm_user.firm_id)
     return {"id": l.id, "status": l.status.value}
