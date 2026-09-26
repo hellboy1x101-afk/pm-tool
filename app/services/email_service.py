@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Optional
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
@@ -127,6 +127,7 @@ def send_outbox_entry(db: Session, outbox_id: int) -> bool:
         if entry.retry_count >= settings.EMAIL_MAX_RETRIES:
             entry.status = "failed"
         else:
+            entry.status = "pending"
             # Exponential backoff: 1min, 5min, 15min
             backoff_minutes = [1, 5, 15]
             delay = backoff_minutes[min(entry.retry_count - 1, len(backoff_minutes) - 1)]
@@ -142,19 +143,28 @@ def process_outbox(db: Session, batch_size: int = 50) -> dict:
     Returns dict with sent/failed/skipped counts.
     """
     now = datetime.now(timezone.utc)
+    # Claim rows before sending so concurrent workers (one per web process) never pick up
+    # the same email: lock with SKIP LOCKED, mark as "sending", commit. Rows left in
+    # "sending" by a crashed worker are reclaimed after 10 minutes.
     pending = (
         db.query(EmailOutbox)
         .filter(
-            EmailOutbox.status == "pending",
             or_(
-                EmailOutbox.next_attempt_at.is_(None),
-                EmailOutbox.next_attempt_at <= now,
+                and_(
+                    EmailOutbox.status == "pending",
+                    or_(EmailOutbox.next_attempt_at.is_(None), EmailOutbox.next_attempt_at <= now),
+                ),
+                and_(EmailOutbox.status == "sending", EmailOutbox.updated_at <= now - timedelta(minutes=10)),
             ),
         )
         .order_by(EmailOutbox.created_at)
         .limit(batch_size)
+        .with_for_update(skip_locked=True)
         .all()
     )
+    for entry in pending:
+        entry.status = "sending"
+    db.commit()
 
     sent = 0
     failed = 0
@@ -170,15 +180,26 @@ def process_outbox(db: Session, batch_size: int = 50) -> dict:
     return {"sent": sent, "failed": failed, "processed": len(pending)}
 
 
+def _firm_outbox(db: Session, firm_id: int):
+    """Outbox entries belonging to a firm (via the assignment's team member)."""
+    return (
+        db.query(EmailOutbox)
+        .join(Assignment, EmailOutbox.assignment_id == Assignment.id)
+        .join(TeamMember, Assignment.team_member_id == TeamMember.id)
+        .filter(TeamMember.firm_id == firm_id)
+    )
+
+
 def list_outbox(
     db: Session,
+    firm_id: int,
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = None,
     q: Optional[str] = None,
 ):
-    """List outbox entries for admin viewing."""
-    query = db.query(EmailOutbox)
+    """List a firm's outbox entries for admin viewing."""
+    query = _firm_outbox(db, firm_id)
     if status:
         query = query.filter(EmailOutbox.status == status)
     if q:
@@ -193,9 +214,10 @@ def list_outbox(
     return items, total
 
 
-def retry_failed(db: Session, outbox_id: int) -> bool:
-    """Reset a failed email to pending for retry."""
-    entry = db.query(EmailOutbox).filter(
+def retry_failed(db: Session, outbox_id: int, firm_id: int | None = None) -> bool:
+    """Reset a failed email to pending for retry. firm_id limits it to that firm's emails."""
+    query = _firm_outbox(db, firm_id) if firm_id is not None else db.query(EmailOutbox)
+    entry = query.filter(
         EmailOutbox.id == outbox_id,
         EmailOutbox.status == "failed",
     ).first()

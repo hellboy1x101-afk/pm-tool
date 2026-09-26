@@ -883,7 +883,7 @@ def api_update_setting(request: Request, dev_id=Depends(require_dev_portal)):
     db = SessionLocal()
     try:
         from app.services.settings_service import update_setting
-        update_setting(db, key, value, updated_by_user_id=0, firm_id=None)
+        update_setting(db, key, value, updated_by_user_id=None, firm_id=None)
         return {"ok": True}
     finally:
         db.close()

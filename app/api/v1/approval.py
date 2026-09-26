@@ -93,15 +93,15 @@ def _apply_approved_change(db: Session, req) -> None:
 
     if req.resource_type == ResourceType.team_member:
         if req.operation == OperationType.create:
-            team_member_service.create_team_member(db, payload)
+            team_member_service.create_team_member(db, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.update and rid:
-            team_member_service.update_team_member(db, rid, payload)
+            team_member_service.update_team_member(db, rid, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.delete and rid:
-            team_member_service.soft_delete_team_member(db, rid)
+            team_member_service.soft_delete_team_member(db, rid, firm_id=req.firm_id)
 
     elif req.resource_type == ResourceType.client:
         if req.operation == OperationType.create:
-            client_service.create_client(db, payload)
+            client_service.create_client(db, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.update and rid:
             client_service.update_client(db, rid, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.delete and rid:
@@ -109,7 +109,7 @@ def _apply_approved_change(db: Session, req) -> None:
 
     elif req.resource_type == ResourceType.engagement:
         if req.operation == OperationType.create:
-            engagement_service.create_engagement(db, payload)
+            engagement_service.create_engagement(db, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.update and rid:
             engagement_service.update_engagement(db, rid, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.delete and rid:
@@ -117,9 +117,9 @@ def _apply_approved_change(db: Session, req) -> None:
 
     elif req.resource_type == ResourceType.leave:
         if req.operation == OperationType.create:
-            leave_service.create_leave(db, payload)
+            leave_service.create_leave(db, payload, firm_id=req.firm_id)
         elif req.operation == OperationType.update and rid:
-            leave_service.update_leave(db, rid, payload)
+            leave_service.update_leave(db, rid, payload, firm_id=req.firm_id)
 
     elif req.resource_type == ResourceType.assignment:
         if req.operation == OperationType.create:

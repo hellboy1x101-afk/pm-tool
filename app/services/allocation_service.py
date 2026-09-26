@@ -14,8 +14,11 @@ from app.models.models import Assignment, EngagementInstance, Leave, LeaveStatus
 from app.services.email_service import queue_assignment_notification
 
 
-def get_assignment(db: Session, assignment_id: int) -> Assignment | None:
-    return db.query(Assignment).filter(Assignment.id == assignment_id).first()
+def get_assignment(db: Session, assignment_id: int, firm_id: int | None = None) -> Assignment | None:
+    query = db.query(Assignment).filter(Assignment.id == assignment_id)
+    if firm_id is not None:
+        query = query.join(TeamMember, Assignment.team_member_id == TeamMember.id).filter(TeamMember.firm_id == firm_id)
+    return query.first()
 
 
 def get_member_allocations(db: Session, firm_id: int | None = None) -> dict:

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import get_current_user, require_role
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import ValidationError
+from app.exceptions import ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.schemas.schemas import ClientCreate, ClientRead, ClientUpdate
@@ -84,9 +84,9 @@ async def create_client_form(
         service.create_client(db, data, firm_id=firm_id)
         return RedirectResponse(url="/clients", status_code=303)
     except ValidationError as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     return templates.TemplateResponse(request, "clients/form.html", {
         "client": None, "action": "/clients/new", "errors": errors, "csrf_token": get_csrf_token(request),
@@ -98,7 +98,7 @@ def edit_client_form(
     request: Request, client_id: int,
     db: Session = Depends(get_db), _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    client = service.get_client(db, client_id)
+    client = service.get_client(db, client_id, firm_id=request.session.get("firm_id"))
     return templates.TemplateResponse(request, "clients/form.html", {
         "client": client, "action": f"/clients/{client_id}/edit", "errors": [], "csrf_token": get_csrf_token(request),
     })
@@ -125,9 +125,9 @@ async def update_client_form(
         set_flash(request, f"Client '{data.get('name', '')}' updated.")
         return RedirectResponse(url="/clients", status_code=303)
     except (ValidationError, Exception) as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
-    client = service.get_client(db, client_id)
+    client = service.get_client(db, client_id, firm_id=request.session.get("firm_id"))
     return templates.TemplateResponse(request, "clients/form.html", {
         "client": client, "action": f"/clients/{client_id}/edit", "errors": errors, "csrf_token": get_csrf_token(request),
     })

@@ -71,7 +71,7 @@ def send_invitation_email(invitation: Invitation) -> None:
         logger.warning("SMTP not configured, skipping invitation email")
         return
     
-    invite_link = f"http://localhost:8000/auth/accept-invitation?token={invitation.token}"
+    invite_link = f"{settings.APP_BASE_URL.rstrip('/')}/auth/accept-invitation?token={invitation.token}"
     
     from app.database import SessionLocal
     db = SessionLocal()

@@ -11,6 +11,8 @@ services:
         generateValue: true
       - key: ENV
         value: production
+      - key: APP_BASE_URL
+        value: https://app.skilledca.in
       - key: SESSION_COOKIE_NAME
         value: staffplan_session
       # SMTP / Email (set in Render Dashboard → Environment → Environment Variables)

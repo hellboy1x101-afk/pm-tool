@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import Depends, Form, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.models import User, FirmUser, TechnicalRole
 
@@ -11,7 +12,7 @@ from app.models.models import User, FirmUser, TechnicalRole
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Extract current user from session, JWT, or dev header.
 
-    Priority: Session → JWT Bearer token → X-User-Id header (dev).
+    Priority: Session → JWT Bearer token → X-User-Id header (test suite only).
     """
     # 1. Session-based auth (Jinja app)
     user_id = request.session.get("user_id")
@@ -35,8 +36,9 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
             except (ValueError, TypeError, KeyError):
                 pass
 
-    # 3. Dev fallback: X-User-Id header
-    header_id = request.headers.get("X-User-Id")
+    # 3. Test-suite fallback: X-User-Id header. Never honoured outside TESTING,
+    #    otherwise anyone could impersonate any user by sending the header.
+    header_id = request.headers.get("X-User-Id") if settings.TESTING else None
     if header_id:
         try:
             user = db.query(User).filter(
@@ -53,8 +55,17 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     )
 
 
+def effective_roles(roles: tuple[TechnicalRole, ...]) -> set[TechnicalRole]:
+    """Super admins can do everything admins can."""
+    allowed = set(roles)
+    if TechnicalRole.admin in allowed:
+        allowed.add(TechnicalRole.super_admin)
+    return allowed
+
+
 def require_role(*roles: TechnicalRole):
     """Dependency factory: require current user to have one of the given roles in their firm."""
+    allowed = effective_roles(roles)
 
     async def _check(
         request: Request,
@@ -74,7 +85,7 @@ def require_role(*roles: TechnicalRole):
             FirmUser.is_active == True,
         ).first()
 
-        if not firm_user or firm_user.technical_role not in roles:
+        if not firm_user or firm_user.technical_role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

@@ -9,10 +9,9 @@ from app.schemas.base import ORMModel
 
 # ── Enums (mirror models for Pydantic) ──
 
-class TechnicalRole(str, Enum):
-    admin = "admin"
-    moderator = "moderator"
-    viewer = "viewer"
+# Re-use the model enum so the API accepts exactly the roles the database stores
+# (the old copy was missing super_admin). Who may grant which role is checked in the routers.
+from app.models.models import TechnicalRole  # noqa: E402
 
 class BusinessRole(str, Enum):
     partner = "partner"
@@ -80,7 +79,6 @@ class UserRead(ORMModel):
     id: int
     email: str
     display_name: str
-    technical_role: TechnicalRole
     is_active: bool
     azure_oid: Optional[str] = None
     created_at: datetime
@@ -91,7 +89,6 @@ class TeamMemberCreate(BaseModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole = TechnicalRole.viewer
     business_role: BusinessRole
     is_oversight_only: bool = False
     seniority_level: Optional[str] = None
@@ -102,7 +99,6 @@ class TeamMemberUpdate(BaseModel):
     employee_code: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
-    technical_role: Optional[TechnicalRole] = None
     business_role: Optional[BusinessRole] = None
     is_oversight_only: Optional[bool] = None
     seniority_level: Optional[str] = None
@@ -115,7 +111,6 @@ class TeamMemberRead(ORMModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole
     business_role: BusinessRole
     is_oversight_only: bool
     seniority_level: Optional[str] = None
@@ -312,7 +307,6 @@ class BulkUploadRow(BaseModel):
     employee_code: Optional[str] = None
     name: str
     email: str
-    technical_role: TechnicalRole = TechnicalRole.viewer
     business_role: BusinessRole
     is_oversight_only: bool = False
     seniority_level: Optional[str] = None

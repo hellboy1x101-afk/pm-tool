@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.auth import require_role
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import NotFoundError
+from app.exceptions import NotFoundError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.schemas.schemas import SystemSettingRead, SystemSettingUpdate
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/admin/settings", tags=["settings"])
 def _render(request, db, saved=False, error="", approval_saved=False, domains_saved=False, auth_saved=False, roles_saved=False, security_saved=False):
     """Render the settings page with common context."""
     firm_id = request.session.get("firm_id")
-    all_settings = service.list_all_settings(db)
-    
+    all_settings = service.list_all_settings(db, firm_id)
+
     # Get approval rules
     from app.services.approval_service import list_approval_rules
     rules = list_approval_rules(db, firm_id) if firm_id else []
@@ -109,10 +109,11 @@ def settings_page(
 
 @router.get("/list", response_model=list[SystemSettingRead])
 def list_settings_api(
+    request: Request,
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
-    return [SystemSettingRead.model_validate(s) for s in service.list_all_settings(db)]
+    return [SystemSettingRead.model_validate(s) for s in service.list_all_settings(db, request.session.get("firm_id"))]
 
 
 @router.post("", response_class=HTMLResponse)
@@ -128,7 +129,8 @@ async def update_settings(
     if not validate_csrf(request, token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
-    all_settings = service.list_all_settings(db)
+    firm_id = request.session.get("firm_id")
+    all_settings = service.list_all_settings(db, firm_id)
     saved = False
     error = ""
 
@@ -136,13 +138,13 @@ async def update_settings(
         for setting in all_settings:
             if setting.key in form_data:
                 service.update_setting(
-                    db, setting.key, form_data[setting.key], updated_by_user_id=user.id
+                    db, setting.key, form_data[setting.key], updated_by_user_id=user.id, firm_id=firm_id
                 )
         saved = True
     except NotFoundError as e:
         error = str(e)
     except Exception as e:
-        error = f"Failed to save settings: {e!s}"
+        error = f"Failed to save settings: {user_message(e, db)}"
 
     return _render(request, db, saved=saved, error=error)
 
@@ -151,10 +153,15 @@ async def update_settings(
 def update_setting_api(
     key: str,
     data: SystemSettingUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(require_role(TechnicalRole.admin)),
 ):
-    result = service.update_setting(db, key, data.value, updated_by_user_id=user.id)
+    if service.get_setting(db, key) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown setting '{key}'")
+    result = service.update_setting(
+        db, key, data.value, updated_by_user_id=user.id, firm_id=request.session.get("firm_id"),
+    )
     return SystemSettingRead.model_validate(result)
 
 
@@ -169,15 +176,6 @@ async def update_approval_rules(
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     firm_id = request.session.get("firm_id")
-    if not firm_id:
-        # Fallback: get user's first firm from FirmUser table
-        from app.services.firm_service import get_user_firms
-        user_id = request.session.get("user_id")
-        if user_id:
-            firms = get_user_firms(db, user_id)
-            if firms:
-                firm_id = firms[0].id
-                request.session["firm_id"] = firm_id
     if not firm_id:
         return _render(request, db, error="No firm selected")
 
@@ -213,15 +211,6 @@ async def update_domains(
 
     firm_id = request.session.get("firm_id")
     if not firm_id:
-        from app.services.firm_service import get_user_firms
-        user_id = request.session.get("user_id")
-        if user_id:
-            firms = get_user_firms(db, user_id)
-            if firms:
-                firm_id = firms[0].id
-                request.session["firm_id"] = firm_id
-
-    if not firm_id:
         return _render(request, db, error="No firm selected")
 
     from app.services.firm_service import get_firm
@@ -243,15 +232,6 @@ async def update_auth_method(
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     firm_id = request.session.get("firm_id")
-    if not firm_id:
-        from app.services.firm_service import get_user_firms
-        user_id = request.session.get("user_id")
-        if user_id:
-            firms = get_user_firms(db, user_id)
-            if firms:
-                firm_id = firms[0].id
-                request.session["firm_id"] = firm_id
-
     if not firm_id:
         return _render(request, db, error="No firm selected")
 
@@ -275,15 +255,6 @@ async def update_business_roles(
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     firm_id = request.session.get("firm_id")
-    if not firm_id:
-        from app.services.firm_service import get_user_firms
-        user_id = request.session.get("user_id")
-        if user_id:
-            firms = get_user_firms(db, user_id)
-            if firms:
-                firm_id = firms[0].id
-                request.session["firm_id"] = firm_id
-
     if not firm_id:
         return _render(request, db, error="No firm selected")
 
@@ -339,15 +310,6 @@ async def update_security(
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
     firm_id = request.session.get("firm_id")
-    if not firm_id:
-        from app.services.firm_service import get_user_firms
-        user_id = request.session.get("user_id")
-        if user_id:
-            firms = get_user_firms(db, user_id)
-            if firms:
-                firm_id = firms[0].id
-                request.session["firm_id"] = firm_id
-
     if not firm_id:
         return _render(request, db, error="No firm selected")
 

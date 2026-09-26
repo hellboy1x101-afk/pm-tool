@@ -10,7 +10,7 @@ from app.auth.auth import get_current_user, require_role
 from app.config import settings
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
-from app.exceptions import NotFoundError, ValidationError
+from app.exceptions import NotFoundError, ValidationError, user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole, TeamMember
 from app.schemas.schemas import (
@@ -50,6 +50,7 @@ def list_team_members(
 
 @router.get("/json", response_model=dict)
 def list_team_members_json(
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     q: Optional[str] = None,
@@ -59,7 +60,8 @@ def list_team_members_json(
     _=Depends(get_current_user),
 ):
     items, total = service.list_team_members(
-        db, limit=limit, offset=offset, q=q, is_active=is_active, business_role=business_role
+        db, firm_id=request.session.get("firm_id"), limit=limit, offset=offset, q=q,
+        is_active=is_active, business_role=business_role,
     )
     return {"items": [TeamMemberRead.model_validate(t) for t in items], "total": total, "limit": limit, "offset": offset}
 
@@ -75,7 +77,7 @@ def new_team_member_form(request: Request, _=Depends(require_role(TechnicalRole.
 async def create_team_member_form(
     request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
+    user=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
     form_data = await request.form()
     if not validate_csrf(request, form_data.get("csrf_token")):
@@ -101,13 +103,13 @@ async def create_team_member_form(
             referer = request.headers.get("referer", "/team-members")
             return RedirectResponse(url=referer, status_code=303)
 
-        service.create_team_member(db, data)
+        service.create_team_member(db, data, firm_id=firm_id)
         set_flash(request, f"Team member '{data['name']}' created successfully.")
         return RedirectResponse(url="/team-members", status_code=303)
     except ValidationError as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
     return templates.TemplateResponse(request, "team_members/form.html", {
         "member": None, "action": "/team-members/new", "errors": errors, "csrf_token": get_csrf_token(request),
@@ -120,7 +122,7 @@ def team_member_detail(
     db: Session = Depends(get_db), _=Depends(get_current_user),
 ):
     firm_id = request.session.get("firm_id")
-    member = service.get_team_member(db, member_id)
+    member = service.get_team_member(db, member_id, firm_id=firm_id)
     from app.services import allocation_service
     assignments, _ = allocation_service.list_assignments(db, firm_id=firm_id, limit=200, team_member_id=member_id)
     from app.services import leave_service
@@ -137,7 +139,7 @@ def edit_team_member_form(
     request: Request, member_id: int,
     db: Session = Depends(get_db), _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    member = service.get_team_member(db, member_id)
+    member = service.get_team_member(db, member_id, firm_id=request.session.get("firm_id"))
     return templates.TemplateResponse(request, "team_members/form.html", {
         "member": member, "action": f"/team-members/{member_id}/edit", "errors": [], "csrf_token": get_csrf_token(request),
     })
@@ -163,14 +165,15 @@ async def update_team_member_form(
     if "date_of_relieving" not in data and "date_of_relieving" in form_data:
         data["date_of_relieving"] = form_data.get("date_of_relieving") or None
 
+    firm_id = request.session.get("firm_id")
     try:
-        service.update_team_member(db, member_id, data)
+        service.update_team_member(db, member_id, data, firm_id=firm_id)
         set_flash(request, "Team member updated successfully.")
         return RedirectResponse(url=f"/team-members/{member_id}", status_code=303)
     except Exception as e:
-        errors.append(str(e))
+        errors.append(user_message(e, db))
 
-    member = service.get_team_member(db, member_id)
+    member = service.get_team_member(db, member_id, firm_id=firm_id)
     return templates.TemplateResponse(request, "team_members/form.html", {
         "member": member, "action": f"/team-members/{member_id}/edit", "errors": errors, "csrf_token": get_csrf_token(request),
     })
@@ -181,7 +184,7 @@ def deactivate_team_member(
     request: Request, member_id: int,
     db: Session = Depends(get_db), _=Depends(require_role(TechnicalRole.admin)),
 ):
-    service.soft_delete_team_member(db, member_id)
+    service.soft_delete_team_member(db, member_id, firm_id=request.session.get("firm_id"))
     set_flash(request, "Team member deactivated.", "warning")
     return RedirectResponse(url=f"/team-members/{member_id}", status_code=303)
 
@@ -189,10 +192,11 @@ def deactivate_team_member(
 @router.post("", response_model=TeamMemberRead, status_code=201)
 def create_team_member_api(
     data: TeamMemberCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.create_team_member(db, data.model_dump())
+    result = service.create_team_member(db, data.model_dump(), firm_id=request.session.get("firm_id"))
     return TeamMemberRead.model_validate(result)
 
 
@@ -200,10 +204,13 @@ def create_team_member_api(
 def update_team_member_api(
     member_id: int,
     data: TeamMemberUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin, TechnicalRole.moderator)),
 ):
-    result = service.update_team_member(db, member_id, data.model_dump(exclude_unset=True))
+    result = service.update_team_member(
+        db, member_id, data.model_dump(exclude_unset=True), firm_id=request.session.get("firm_id"),
+    )
     return TeamMemberRead.model_validate(result)
 
 
@@ -225,7 +232,9 @@ def bulk_upload(
         raise HTTPException(status_code=400, detail=f"File exceeds {settings.CSV_MAX_FILE_SIZE_MB}MB")
 
     from app.services.settings_service import get_setting_value
-    max_rows_str = get_setting_value(db, "bulk_upload_max_rows", str(settings.BULK_UPLOAD_MAX_ROWS))
+    max_rows_str = get_setting_value(
+        db, "bulk_upload_max_rows", request.session.get("firm_id"), default=str(settings.BULK_UPLOAD_MAX_ROWS),
+    )
     max_rows = int(max_rows_str)
 
     reader = csv.DictReader(io.StringIO(contents.decode("utf-8-sig")))
@@ -252,13 +261,13 @@ def bulk_upload(
 
             validated = BulkUploadRow(**{k.strip(): v.strip() for k, v in row.items()})
             seen_emails.add(validated.email)
-            service.create_team_member(db, validated.model_dump())
+            service.create_team_member(db, validated.model_dump(), firm_id=request.session.get("firm_id"))
             inserted += 1
         except ValidationError as e:
-            errors.append(BulkUploadError(row=idx, field="", reason=str(e)))
+            errors.append(BulkUploadError(row=idx, field="", reason=user_message(e, db)))
             failed += 1
         except Exception as e:
-            errors.append(BulkUploadError(row=idx, field="", reason=str(e)))
+            errors.append(BulkUploadError(row=idx, field="", reason=user_message(e, db)))
             failed += 1
 
     msg = f"Bulk upload: {inserted} inserted, {failed} failed."
@@ -269,10 +278,11 @@ def bulk_upload(
 @router.post("/bulk-deactivate")
 def bulk_deactivate(
     member_ids: list[int],
+    request: Request,
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
-    count = service.bulk_deactivate(db, member_ids)
+    count = service.bulk_deactivate(db, member_ids, firm_id=request.session.get("firm_id"))
     return {"deactivated": count}
 
 
@@ -305,6 +315,6 @@ async def create_extension_form(
         )
         set_flash(request, "Extension request submitted for approval")
     except Exception as e:
-        set_flash(request, f"Error: {e}", "danger")
+        set_flash(request, user_message(e, db), "danger")
 
     return RedirectResponse(url=f"/team-members/{member_id}", status_code=303)

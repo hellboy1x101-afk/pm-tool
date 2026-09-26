@@ -1,5 +1,4 @@
 from datetime import date, timedelta
-from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -18,6 +17,7 @@ from app.models.models import (
     FirmUser,
     Leave,
     TeamMember,
+    TechnicalRole,
     User,
 )
 from app.services import report_service
@@ -38,22 +38,29 @@ def home_dashboard(
     thirty_days_later = today + timedelta(days=30)
     firm_id = request.session.get("firm_id")
 
+    # Every query below is limited to the active firm. Engagements are owned via their
+    # client; assignments and leaves via their team member.
+    in_firm_member = TeamMember.firm_id == firm_id
+
     # ── Team metrics ──
-    total_members = db.query(func.count(TeamMember.id)).filter(TeamMember.is_active == True).scalar() or 0
+    total_members = db.query(func.count(TeamMember.id)).filter(in_firm_member, TeamMember.is_active == True).scalar() or 0
     total_admins = db.query(func.count(FirmUser.id)).filter(
         FirmUser.firm_id == firm_id,
-        FirmUser.technical_role == "admin",
+        FirmUser.technical_role.in_([TechnicalRole.admin, TechnicalRole.super_admin]),
         FirmUser.is_active == True,
     ).scalar() or 0
 
     # ── Engagement metrics ──
-    active_engagements = db.query(func.count(Engagement.id)).filter(Engagement.status == "active").scalar() or 0
-    total_clients = db.query(func.count(Client.id)).filter(Client.is_active == True).scalar() or 0
+    active_engagements = (
+        db.query(func.count(Engagement.id)).join(Client, Engagement.client_id == Client.id)
+        .filter(Client.firm_id == firm_id, Engagement.status == "active").scalar() or 0
+    )
+    total_clients = db.query(func.count(Client.id)).filter(Client.firm_id == firm_id, Client.is_active == True).scalar() or 0
 
     # ── Assignment metrics ──
     current_assignments = (
-        db.query(func.count(Assignment.id))
-        .filter(Assignment.start_date <= today, Assignment.end_date >= today)
+        db.query(func.count(Assignment.id)).join(TeamMember, Assignment.team_member_id == TeamMember.id)
+        .filter(in_firm_member, Assignment.start_date <= today, Assignment.end_date >= today)
         .scalar() or 0
     )
 
@@ -62,15 +69,18 @@ def home_dashboard(
     ).distinct()
     bench_count = (
         db.query(func.count(TeamMember.id))
-        .filter(TeamMember.is_active == True, TeamMember.id.not_in(assigned_member_ids))
+        .filter(in_firm_member, TeamMember.is_active == True, TeamMember.id.not_in(assigned_member_ids))
         .scalar() or 0
     )
 
     # ── Leave metrics ──
-    pending_leaves = db.query(func.count(Leave.id)).filter(Leave.status == "pending").scalar() or 0
+    pending_leaves = (
+        db.query(func.count(Leave.id)).join(TeamMember, Leave.team_member_id == TeamMember.id)
+        .filter(in_firm_member, Leave.status == "pending").scalar() or 0
+    )
     upcoming_leaves = (
-        db.query(func.count(Leave.id))
-        .filter(Leave.status == "approved", Leave.start_date > today, Leave.start_date <= thirty_days_later)
+        db.query(func.count(Leave.id)).join(TeamMember, Leave.team_member_id == TeamMember.id)
+        .filter(in_firm_member, Leave.status == "approved", Leave.start_date > today, Leave.start_date <= thirty_days_later)
         .scalar() or 0
     )
 
@@ -78,8 +88,9 @@ def home_dashboard(
     week_ago = today - timedelta(days=7)
     recent_assignments = (
         db.query(Assignment)
+        .join(TeamMember, Assignment.team_member_id == TeamMember.id)
         .options(joinedload(Assignment.team_member), joinedload(Assignment.engagement_instance))
-        .filter(Assignment.created_at >= week_ago)
+        .filter(in_firm_member, Assignment.created_at >= week_ago)
         .order_by(Assignment.created_at.desc())
         .limit(5)
         .all()
@@ -88,7 +99,7 @@ def home_dashboard(
     # ══════════════════════════════════════════════
     # SECTION 1: Utilization
     # ══════════════════════════════════════════════
-    active_members = db.query(TeamMember).filter(TeamMember.is_active == True).all()
+    active_members = db.query(TeamMember).filter(in_firm_member, TeamMember.is_active == True).all()
     member_ids = [m.id for m in active_members]
 
     # Current allocations per member (active assignments)
@@ -150,12 +161,11 @@ def home_dashboard(
             joinedload(Assignment.team_member),
             joinedload(Assignment.engagement_instance).joinedload(EngagementInstance.engagement),
         )
-        .filter(Assignment.end_date >= today, Assignment.start_date <= three_months_later)
+        .join(TeamMember, Assignment.team_member_id == TeamMember.id)
+        .filter(in_firm_member, Assignment.end_date >= today, Assignment.start_date <= three_months_later)
     )
     if business_role:
-        timeline_query = timeline_query.join(TeamMember, Assignment.team_member_id == TeamMember.id).filter(
-            TeamMember.business_role == business_role
-        )
+        timeline_query = timeline_query.filter(TeamMember.business_role == business_role)
     timeline_assignments = timeline_query.order_by(Assignment.start_date).all()
     timeline_data = []
     for a in timeline_assignments:
@@ -201,13 +211,16 @@ def home_dashboard(
     # Engagement pipeline
     eng_by_status = {}
     for status_val in ["active", "on_hold", "completed"]:
-        cnt = db.query(func.count(Engagement.id)).filter(Engagement.status == status_val).scalar() or 0
+        cnt = (
+            db.query(func.count(Engagement.id)).join(Client, Engagement.client_id == Client.id)
+            .filter(Client.firm_id == firm_id, Engagement.status == status_val).scalar() or 0
+        )
         eng_by_status[status_val] = cnt
 
     # Pending approvals (admin only)
     pending_approvals = []
     pending_approval_count = 0
-    if request.session.get("user_role") == "admin":
+    if request.session.get("user_role") in ("admin", "super_admin"):
         pending_approvals = (
             db.query(ApprovalRequest)
             .filter(ApprovalRequest.firm_id == firm_id, ApprovalRequest.status == "pending")
@@ -230,6 +243,7 @@ def home_dashboard(
         my_recent_requests = (
             db.query(ApprovalRequest)
             .filter(
+                ApprovalRequest.firm_id == firm_id,
                 ApprovalRequest.requested_by_user_id == user_id,
                 ApprovalRequest.status.in_(["approved", "rejected"]),
                 ApprovalRequest.updated_at >= today - timedelta(days=7),
@@ -306,7 +320,21 @@ def bench_dashboard(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    items = report_service.get_bench_data(db)
+    today = date.today()
+    report = report_service.build_bench_report(db, request.session.get("firm_id"))
+    items = [
+        {
+            "name": row["name"],
+            "business_role": row["business_role"],
+            "days_since_last_assignment": row["days_on_bench"],
+            "last_assignment_end": (
+                (today - timedelta(days=row["days_on_bench"])).isoformat()
+                if row["days_on_bench"] is not None else None
+            ),
+            "is_rolling_off": False,
+        }
+        for row in report["rows"]
+    ]
     return templates.TemplateResponse(request, "dashboard/bench.html", {
         "items": items,
     })

@@ -46,7 +46,7 @@
     <div class="uk-card uk-card-body">
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold">Engagement Instances</h3>
-            {% if request.session.get("user_role") in ["admin", "moderator"] %}
+            {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
             <button onclick="document.getElementById('new-instance-form').classList.toggle('hidden')" class="uk-btn uk-btn-primary uk-btn-sm">
                 <uk-icon icon="plus" width="14" height="14" class="mr-1"></uk-icon>Add Instance
             </button>
@@ -56,7 +56,7 @@
         <p class="text-sm text-muted-foreground mb-4">Instances represent specific time periods for this engagement (e.g., "FY 2024-25 Audit").</p>
 
         <!-- New Instance Form (hidden by default) -->
-        {% if request.session.get("user_role") in ["admin", "moderator"] %}
+        {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
         <div id="new-instance-form" class="hidden mb-6 p-4 border border-border rounded-lg bg-muted/30">
             <h4 class="font-medium mb-3">Create New Instance</h4>
             <form method="POST" action="/engagements/{{ engagement.id }}/instances/new" class="space-y-3">
@@ -131,7 +131,7 @@
                         <td>{{ inst.end_date }}</td>
                         <td>{{ inst.due_date or "—" }}</td>
                         <td>
-                            {% if request.session.get("user_role") in ["admin", "moderator"] %}
+                            {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
                             <button onclick="openAssignModal({{ inst.id }}, '{{ inst.period_label | e }}')" class="uk-btn uk-btn-primary uk-btn-xs">
                                 <uk-icon icon="user-plus" width="12" height="12" class="mr-1"></uk-icon>Assign
                             </button>

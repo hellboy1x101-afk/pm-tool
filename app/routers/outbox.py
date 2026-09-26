@@ -27,7 +27,9 @@ def list_outbox(
     db: Session = Depends(get_db),
     user=Depends(require_role(TechnicalRole.admin)),
 ):
-    items, total = service.list_outbox(db, limit=limit, offset=offset, status=status, q=q)
+    items, total = service.list_outbox(
+        db, firm_id=request.session.get("firm_id"), limit=limit, offset=offset, status=status, q=q,
+    )
     return templates.TemplateResponse(request, "admin/outbox.html", {
         "items": items,
         "total": total,
@@ -50,7 +52,7 @@ async def retry_email(
     if not validate_csrf(request, form_data.get("csrf_token")):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
-    if service.retry_failed(db, outbox_id):
+    if service.retry_failed(db, outbox_id, firm_id=request.session.get("firm_id")):
         set_flash(request, "Email reset to pending for retry.", "info")
     else:
         set_flash(request, "Email not found or not in failed state.", "danger")
@@ -68,10 +70,8 @@ async def process_now(
     if not validate_csrf(request, form_data.get("csrf_token")):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
-    result = service.process_outbox(db)
-    set_flash(
-        request,
-        f"Processed {result['processed']} emails: {result['sent']} sent, {result['failed']} failed.",
-        "info",
-    )
+    # Sends whatever is due platform-wide (same as the background worker); only report
+    # that it ran, so one firm doesn't learn another firm's email volume.
+    service.process_outbox(db)
+    set_flash(request, "Outbox processed.", "info")
     return RedirectResponse(url="/admin/outbox", status_code=303)

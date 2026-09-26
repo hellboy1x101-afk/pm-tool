@@ -196,8 +196,6 @@ def build_bench_report(db: Session, firm_id: int, filters: dict = None) -> dict:
     today = date.today()
     
     # Get members with no current assignments
-    from sqlalchemy import subquery
-    
     assigned_member_ids = db.query(Assignment.team_member_id).filter(
         Assignment.start_date <= today,
         Assignment.end_date >= today,

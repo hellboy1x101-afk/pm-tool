@@ -7,7 +7,7 @@
 <div class="uk-card uk-card-body uk-margin">
     <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-semibold">Leaves</h2>
-        {% if request.session.get("user_role") in ["admin", "moderator"] %}
+        {% if request.session.get("user_role") in ["super_admin", "admin", "moderator"] %}
         <a href="/leaves/new" class="uk-btn uk-btn-primary uk-btn-sm">
             <span uk-icon="icon: plus; ratio: 0.8" class="mr-1"></span>Add Leave
         </a>

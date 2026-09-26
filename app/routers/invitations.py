@@ -11,6 +11,7 @@ from app.auth.auth import require_role
 from app.config import settings
 from app.csrf_utils import get_csrf_token, validate_csrf
 from app.database import get_db
+from app.exceptions import user_message
 from app.flash import set_flash
 from app.models.models import TechnicalRole
 from app.services.invitation_service import (
@@ -25,6 +26,16 @@ from app.services.invitation_service import (
 from app.templates_setup import templates
 
 router = APIRouter(prefix="/invitations", tags=["invitations"])
+
+
+def _invitable_roles(db: Session, request: Request) -> list[str]:
+    """Roles the current user may grant. Only super admins can create super admins."""
+    from app.services.firm_service import get_user_role_in_firm
+
+    role = get_user_role_in_firm(db, request.session.get("user_id"), request.session.get("firm_id"))
+    if role == TechnicalRole.super_admin:
+        return ["super_admin", "admin", "moderator"]
+    return ["admin", "moderator"]
 
 
 @router.get("", response_class=HTMLResponse)
@@ -59,7 +70,7 @@ def new_invitation_form(
     return templates.TemplateResponse(request, "invitations/form.html", {
         "csrf_token": get_csrf_token(request),
         "errors": [],
-        "roles": ["super_admin", "admin", "moderator"],
+        "roles": _invitable_roles(db, request),
         "super_admin_count": super_admin_count,
         "max_super_admins": 2,
     })
@@ -79,13 +90,14 @@ async def create_invitation_form(
     email = form_data.get("email", "").strip().lower()
     role = form_data.get("role", "moderator")
     
+    allowed_roles = _invitable_roles(db, request)
     errors = []
     if not email:
         errors.append("Email is required")
     if "@" not in email:
         errors.append("Invalid email format")
-    if role not in ["super_admin", "admin", "moderator"]:
-        errors.append("Invalid role")
+    if role not in allowed_roles:
+        errors.append("You are not allowed to invite users with this role")
     
     firm_id = request.session.get("firm_id")
     user_id = request.session.get("user_id")
@@ -106,7 +118,7 @@ async def create_invitation_form(
     return templates.TemplateResponse(request, "invitations/form.html", {
         "csrf_token": get_csrf_token(request),
         "errors": errors,
-        "roles": ["super_admin", "admin", "moderator"],
+        "roles": allowed_roles,
         "email": email,
         "role": role,
         "super_admin_count": super_admin_count,
@@ -207,17 +219,22 @@ async def bulk_invite(
     sent = 0
     failed = 0
     errors = []
-    
+    allowed_roles = _invitable_roles(db, request)
+
     for email, role in emails_with_roles:
-        if role not in ["super_admin", "admin", "moderator"]:
+        if role == "super_admin" and role not in allowed_roles:
+            failed += 1
+            errors.append(f"{email}: You are not allowed to invite super admins")
+            continue
+        if role not in allowed_roles:
             role = "moderator"
-        
+
         try:
             create_invitation(db, firm_id, email, role, user_id)
             sent += 1
         except Exception as e:
             failed += 1
-            errors.append(f"{email}: {str(e)}")
+            errors.append(f"{email}: {user_message(e, db)}")
     
     return templates.TemplateResponse(request, "invitations/bulk.html", {
         "csrf_token": get_csrf_token(request),
