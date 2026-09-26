@@ -121,8 +121,14 @@ async def register_check_domain(request: Request, db: Session = Depends(get_db))
         # No firm found - will create new firm
         # Generate OTP for email verification
         from app.services.otp_service import generate_otp
-        otp = generate_otp(db, email)
-        logger.info(f"OTP for {email}: {otp}")
+        try:
+            generate_otp(db, email)
+        except ValueError as e:
+            return templates.TemplateResponse(request, "auth/register.html", {
+                "csrf_token": get_csrf_token(request),
+                "error": str(e),
+                "step": "1",
+            })
 
         request.session["pending_registration"] = {
             "email": email,
@@ -152,22 +158,35 @@ async def register_select_firm(request: Request, db: Session = Depends(get_db)):
     if not email:
         return RedirectResponse(url="/auth/register", status_code=303)
 
-    # Generate OTP
-    from app.services.otp_service import generate_otp
-    otp = generate_otp(db, email)
-    logger.info(f"OTP for {email}: {otp}")
+    from app.services.otp_service import find_firm_by_domain, generate_otp
+
+    firm = None
+    if action == "join":
+        # The only firm a new user may join is the one whose allowed domains match their
+        # email; never trust a firm id from the form.
+        firm, _reason = find_firm_by_domain(db, email)
+        if not firm:
+            return templates.TemplateResponse(request, "auth/register.html", {
+                "csrf_token": get_csrf_token(request),
+                "error": "Your email domain is not linked to any firm. Ask your admin for an invitation.",
+                "step": "1",
+            })
+
+    try:
+        generate_otp(db, email)
+    except ValueError as e:
+        return templates.TemplateResponse(request, "auth/register.html", {
+            "csrf_token": get_csrf_token(request),
+            "error": str(e),
+            "step": "1",
+        })
 
     if action == "join":
-        # Join existing firm
-        firm_id = form_data.get("firm_id")
-        from app.models.models import Firm
-        firm = db.query(Firm).filter(Firm.id == firm_id).first()
-        
         request.session["pending_registration"] = {
             "email": email,
             "action": "join_firm",
-            "firm_id": firm_id,
-            "firm_name": firm.name if firm else "Unknown",
+            "firm_id": firm.id,
+            "firm_name": firm.name,
             "totp_secret": None,
         }
     else:
@@ -431,8 +450,14 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
     # For OTP method or if 2FA not required - send OTP for verification
     from app.services.otp_service import generate_otp
-    otp = generate_otp(db, email)
-    logger.info(f"Login OTP for {email}: {otp}")
+    try:
+        generate_otp(db, email)
+    except ValueError as e:
+        return templates.TemplateResponse(request, "auth/login.html", {
+            "csrf_token": get_csrf_token(request),
+            "error": str(e),
+            "ms365_enabled": get_ms365_oauth_client() is not None,
+        })
 
     request.session["pending_login_email"] = email
     request.session["remember_me"] = remember_me
@@ -951,7 +976,14 @@ async def forgot_password(request: Request, db: Session = Depends(get_db)):
         })
 
     from app.services.otp_service import generate_otp
-    generate_otp(db, email, purpose="password_reset")
+    try:
+        generate_otp(db, email, purpose="password_reset")
+    except ValueError as e:
+        return templates.TemplateResponse(request, "auth/forgot_password.html", {
+            "csrf_token": get_csrf_token(request),
+            "error": str(e),
+            "step": "1",
+        })
 
     request.session["pending_reset_email"] = email
     return templates.TemplateResponse(request, "auth/forgot_password.html", {

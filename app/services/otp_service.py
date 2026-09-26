@@ -337,7 +337,8 @@ def send_otp_email(to_email: str, otp: str, purpose: str = "verification") -> No
     """Send OTP via email using SMTP."""
     if not settings.SMTP_HOST or not settings.SMTP_USER:
         logger.warning("SMTP not configured, skipping email send")
-        logger.info(f"OTP for {to_email}: {otp}")
+        if settings.ENV != "production":
+            logger.info(f"OTP for {to_email}: {otp}")
         return
 
     msg = MIMEMultipart("alternative")
