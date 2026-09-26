@@ -9,10 +9,9 @@ from app.schemas.base import ORMModel
 
 # ── Enums (mirror models for Pydantic) ──
 
-class TechnicalRole(str, Enum):
-    admin = "admin"
-    moderator = "moderator"
-    viewer = "viewer"
+# Re-use the model enum so the API accepts exactly the roles the database stores
+# (the old copy was missing super_admin). Who may grant which role is checked in the routers.
+from app.models.models import TechnicalRole  # noqa: E402
 
 class BusinessRole(str, Enum):
     partner = "partner"
@@ -80,7 +79,6 @@ class UserRead(ORMModel):
     id: int
     email: str
     display_name: str
-    technical_role: TechnicalRole
     is_active: bool
     azure_oid: Optional[str] = None
     created_at: datetime

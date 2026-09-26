@@ -17,6 +17,28 @@ from app.templates_setup import templates
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+def _actor_role(db: Session, request: Request) -> TechnicalRole | None:
+    from app.services.firm_service import get_user_role_in_firm
+
+    return get_user_role_in_firm(db, request.session.get("user_id"), request.session.get("firm_id"))
+
+
+def _grantable_roles(db: Session, request: Request) -> list[str]:
+    """Roles the current user may assign. Only super admins can grant super_admin."""
+    if _actor_role(db, request) == TechnicalRole.super_admin:
+        return [r.value for r in TechnicalRole]
+    return [r.value for r in TechnicalRole if r != TechnicalRole.super_admin]
+
+
+def _require_can_manage(db: Session, request: Request, target_user_id: int) -> None:
+    """Admins cannot modify super admins; only super admins can."""
+    from app.services.firm_service import get_user_role_in_firm
+
+    target_role = get_user_role_in_firm(db, target_user_id, request.session.get("firm_id"))
+    if target_role == TechnicalRole.super_admin and _actor_role(db, request) != TechnicalRole.super_admin:
+        raise HTTPException(status_code=403, detail="Only a super admin can modify another super admin")
+
+
 @router.get("", response_class=HTMLResponse)
 def list_users(
     request: Request,
@@ -29,7 +51,7 @@ def list_users(
 ):
     firm_id = request.session.get("firm_id")
     items, total = service.list_users(
-        db, limit=limit, offset=offset, q=q, is_active=is_active
+        db, firm_id=firm_id, limit=limit, offset=offset, q=q, is_active=is_active
     )
     # Attach firm_role to each user for template display
     from app.services.firm_service import get_user_role_in_firm
@@ -155,6 +177,7 @@ def list_users(
 
 @router.get("/json", response_model=dict)
 def list_users_json(
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     q: Optional[str] = None,
@@ -163,7 +186,7 @@ def list_users_json(
     _=Depends(require_role(TechnicalRole.admin)),
 ):
     items, total = service.list_users(
-        db, limit=limit, offset=offset, q=q, is_active=is_active
+        db, firm_id=request.session.get("firm_id"), limit=limit, offset=offset, q=q, is_active=is_active
     )
     return {
         "items": [UserRead.model_validate(u) for u in items],
@@ -176,6 +199,7 @@ def list_users_json(
 @router.get("/new", response_class=HTMLResponse)
 def new_user_form(
     request: Request,
+    db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
     return templates.TemplateResponse(request, "users/form.html", {
@@ -183,7 +207,7 @@ def new_user_form(
         "action": "/users/new",
         "errors": [],
         "csrf_token": get_csrf_token(request),
-        "roles": [r.value for r in TechnicalRole],
+        "roles": _grantable_roles(db, request),
     })
 
 
@@ -210,6 +234,8 @@ async def create_user_form(
         errors.append("Display name is required")
     if password and len(password) < 8:
         errors.append("Password must be at least 8 characters")
+    if firm_role not in _grantable_roles(db, request):
+        errors.append("You are not allowed to grant this role")
 
     if not errors:
         try:
@@ -228,7 +254,7 @@ async def create_user_form(
         "action": "/users/new",
         "errors": errors,
         "csrf_token": get_csrf_token(request),
-        "roles": [r.value for r in TechnicalRole],
+        "roles": _grantable_roles(db, request),
     })
 
 
@@ -239,13 +265,14 @@ def edit_user_form(
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
-    user_obj = service.get_user(db, user_id)
+    user_obj = service.get_user(db, user_id, firm_id=request.session.get("firm_id"))
+    _require_can_manage(db, request, user_id)
     return templates.TemplateResponse(request, "users/form.html", {
         "user_obj": user_obj,
         "action": f"/users/{user_id}/edit",
         "errors": [],
         "csrf_token": get_csrf_token(request),
-        "roles": [r.value for r in TechnicalRole],
+        "roles": _grantable_roles(db, request),
     })
 
 
@@ -260,6 +287,10 @@ async def update_user_form(
     if not validate_csrf(request, form_data.get("csrf_token")):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
+    firm_id = request.session.get("firm_id")
+    user_obj = service.get_user(db, user_id, firm_id=firm_id)
+    _require_can_manage(db, request, user_id)
+
     errors = []
     data = {}
     data["email"] = form_data.get("email", "").strip()
@@ -273,37 +304,33 @@ async def update_user_form(
         errors.append("Display name is required")
     if password and len(password) < 8:
         errors.append("Password must be at least 8 characters")
+    if password and service.belongs_to_other_firms(db, user_id, firm_id):
+        errors.append("This user also belongs to another firm; they must reset their own password")
+    if firm_role and firm_role not in _grantable_roles(db, request):
+        errors.append("You are not allowed to grant this role")
 
     if not errors:
         try:
-            service.update_user(db, user_id, data)
+            service.update_user(db, user_id, data, firm_id=firm_id)
             if password:
                 from app.services.auth_service import set_user_password
 
-                user_obj = service.get_user(db, user_id)
                 set_user_password(db, user_obj, password)
-            # Update firm role if provided
             if firm_role:
-                firm_id = request.session.get("firm_id")
-                if firm_id:
-                    from app.services.firm_service import update_firm_user_role
-                    from app.models.models import TechnicalRole
-                    try:
-                        update_firm_user_role(db, user_id, firm_id, TechnicalRole(firm_role))
-                    except Exception:
-                        pass  # User might not be in this firm yet
+                from app.services.firm_service import update_firm_user_role
+
+                update_firm_user_role(db, user_id, firm_id, TechnicalRole(firm_role))
             set_flash(request, f"User '{data['display_name']}' updated.")
             return RedirectResponse(url="/users", status_code=303)
         except ValidationError as e:
             errors.append(str(e))
 
-    user_obj = service.get_user(db, user_id)
     return templates.TemplateResponse(request, "users/form.html", {
-        "user_obj": user_obj,
+        "user_obj": service.get_user(db, user_id, firm_id=firm_id),
         "action": f"/users/{user_id}/edit",
         "errors": errors,
         "csrf_token": get_csrf_token(request),
-        "roles": [r.value for r in TechnicalRole],
+        "roles": _grantable_roles(db, request),
     })
 
 
@@ -317,7 +344,8 @@ def deactivate_user_form(
     if user_id == current_user.id:
         set_flash(request, "You cannot deactivate your own account.", "danger")
         return RedirectResponse(url="/users", status_code=303)
-    service.soft_delete_user(db, user_id, current_user.id)
+    _require_can_manage(db, request, user_id)
+    service.soft_delete_user(db, user_id, current_user.id, firm_id=request.session.get("firm_id"))
     set_flash(request, "User deactivated.", "warning")
     return RedirectResponse(url="/users", status_code=303)
 
@@ -329,7 +357,7 @@ def restore_user_form(
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
-    service.restore_user(db, user_id)
+    service.restore_user(db, user_id, firm_id=request.session.get("firm_id"))
     set_flash(request, "User restored.", "success")
     return RedirectResponse(url="/users", status_code=303)
 
@@ -341,9 +369,11 @@ def create_user_api(
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
+    if data.technical_role.value not in _grantable_roles(db, request):
+        raise HTTPException(status_code=403, detail="You are not allowed to grant this role")
     firm_id = request.session.get("firm_id")
     result = service.create_user(
-        db, data.model_dump(), firm_id=firm_id,
+        db, data.model_dump(exclude={"technical_role"}), firm_id=firm_id,
         firm_role=data.technical_role,
     )
     return UserRead.model_validate(result)
@@ -353,8 +383,20 @@ def create_user_api(
 def update_user_api(
     user_id: int,
     data: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     _=Depends(require_role(TechnicalRole.admin)),
 ):
-    result = service.update_user(db, user_id, data.model_dump(exclude_unset=True))
+    firm_id = request.session.get("firm_id")
+    service.get_user(db, user_id, firm_id=firm_id)
+    _require_can_manage(db, request, user_id)
+    changes = data.model_dump(exclude_unset=True)
+    new_role = changes.pop("technical_role", None)
+    if new_role is not None and new_role.value not in _grantable_roles(db, request):
+        raise HTTPException(status_code=403, detail="You are not allowed to grant this role")
+    result = service.update_user(db, user_id, changes, firm_id=firm_id)
+    if new_role is not None:
+        from app.services.firm_service import update_firm_user_role
+
+        update_firm_user_role(db, user_id, firm_id, new_role)
     return UserRead.model_validate(result)
