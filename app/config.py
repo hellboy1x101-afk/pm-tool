@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALLOWED_ORIGINS: str = "*"
 
+    # Public URL of this app, used to build links in outgoing emails (no trailing slash)
+    APP_BASE_URL: str = "http://localhost:8000"
+
     SESSION_COOKIE_NAME: str = "splanly_session"
     SESSION_MAX_AGE_SECONDS: int = 86400  # 24 hours
 
